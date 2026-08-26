@@ -4,6 +4,21 @@
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
+
+
+-- ============================================
+-- CURRENCIES
+-- ============================================
+
+CREATE TABLE currencies (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code VARCHAR(10) NOT NULL UNIQUE,
+    name VARCHAR(100) NOT NULL,
+    symbol VARCHAR(10),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+
 -- ============================================
 -- USERS
 -- ============================================
