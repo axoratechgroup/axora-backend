@@ -79,6 +79,7 @@ CREATE TABLE transactions (
     wallet_id UUID NOT NULL,
     type VARCHAR(20) NOT NULL,
     amount NUMERIC(20, 8) NOT NULL,
+    applied_exchange_rate NUMERIC(20, 8),
     currency VARCHAR(3) NOT NULL,
     origin VARCHAR(255),
     destination VARCHAR(255),
