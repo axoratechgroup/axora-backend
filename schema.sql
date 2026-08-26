@@ -4,6 +4,21 @@
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
+
+
+-- ============================================
+-- CURRENCIES
+-- ============================================
+
+CREATE TABLE currencies (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code VARCHAR(10) NOT NULL UNIQUE,
+    name VARCHAR(100) NOT NULL,
+    symbol VARCHAR(10),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+
 -- ============================================
 -- USERS
 -- ============================================
@@ -64,7 +79,14 @@ CREATE TABLE transactions (
     wallet_id UUID NOT NULL,
     type VARCHAR(20) NOT NULL,
     amount NUMERIC(20, 8) NOT NULL,
+    applied_exchange_rate NUMERIC(20, 8),
     currency VARCHAR(3) NOT NULL,
+
+    CONSTRAINT fk_transaction_currency
+    FOREIGN KEY (currency)
+    REFERENCES currencies(code)
+    ON DELETE RESTRICT,
+    
     origin VARCHAR(255),
     destination VARCHAR(255),
     destination_wallet_id UUID,
