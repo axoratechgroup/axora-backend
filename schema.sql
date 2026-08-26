@@ -58,6 +58,11 @@ CREATE TABLE balances (
     amount NUMERIC(20, 8) NOT NULL DEFAULT 0,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
+    CONSTRAINT fk_balance_currency
+        FOREIGN KEY (currency)
+        REFERENCES currencies(code)
+        ON DELETE RESTRICT,
+
     CONSTRAINT fk_balance_wallet
         FOREIGN KEY (wallet_id)
         REFERENCES wallets(id)
