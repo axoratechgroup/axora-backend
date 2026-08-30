@@ -1,13 +1,17 @@
 import express from "express";
+import cors from "cors";
 import { pool } from "./config/database.js";
+import { authenticateToken } from "./middleware/auth.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import { corsOptions } from "./config/cors.js";
 
 const app = express();
 
+app.use(cors(corsOptions));
 app.use(express.json());
 
-app.get("/users", async (req, res) => {
+app.get("/users", authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, first_name, last_name, username, email, created_at
@@ -26,6 +30,8 @@ app.get("/users", async (req, res) => {
 });
 
 app.post("/auth/register", async (req, res) => {
+  const client = await pool.connect();
+
   try {
     const { first_name, last_name, username, email, password } = req.body;
 
@@ -43,14 +49,21 @@ app.post("/auth/register", async (req, res) => {
 
     const password_hash = await bcrypt.hash(password, 10);
 
-    const result = await pool.query(
+    await client.query("BEGIN");
+
+    const userResult = await client.query(
       `INSERT INTO users (first_name, last_name, username, email, password_hash)
       VALUES ($1, $2, $3, $4, $5)
       RETURNING id, first_name, last_name, username, email, created_at`,
       [first_name, last_name, username, email, password_hash],
     );
 
-    const user = result.rows[0];
+    const user = userResult.rows[0];
+
+    await client.query(`INSERT INTO wallets (user_id) VALUES ($1)`, [user.id]);
+
+    await client.query("COMMIT");
+
     const token = jwt.sign(
       { id: user.id, email: user.email },
       process.env.JWT_SECRET!,
@@ -61,6 +74,8 @@ app.post("/auth/register", async (req, res) => {
 
     res.status(201).json({ user, token });
   } catch (error: any) {
+    await client.query("ROLLBACK");
+
     if (error.code === "23505") {
       return res
         .status(409)
@@ -68,6 +83,8 @@ app.post("/auth/register", async (req, res) => {
     }
     console.error(error);
     res.status(500).json({ error: "Error al registrar el usuario" });
+  } finally {
+    client.release();
   }
 });
 
