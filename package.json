@@ -10,15 +10,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jsstagno90/axora-backend.git"
+    "url": "git+https://github.com/axoratechgroup/axora-backend.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/jsstagno90/axora-backend/issues"
+    "url": "https://github.com/axoratechgroup/axora-backend/issues"
   },
-  "homepage": "https://github.com/jsstagno90/axora-backend#readme",
+  "homepage": "https://github.com/axoratechgroup/axora-backend#readme",
   "dependencies": {
     "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
