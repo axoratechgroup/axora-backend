@@ -29,6 +29,7 @@ cp .env.example .env
 | `DATABASE_URL` | Sí          | Connection string de Postgres (`postgres://usuario:password@host:puerto/db`)                 |
 | `JWT_SECRET`   | Sí          | Secreto para firmar y verificar los JWT. Usa un valor propio, no lo compartas entre entornos |
 | `CORS_ORIGIN`  | No          | Orígenes permitidos por CORS, separados por coma. Default: `http://localhost:5173`           |
+| `PORT`         | No          | Puerto donde escucha el server. Default: `3000` (en Railway lo inyecta la plataforma)        |
 
 `.env` está en `.gitignore` — nunca se commitea.
 
@@ -56,7 +57,7 @@ docker run --name axora-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=ax
 npm run dev
 ```
 
-Corre con `tsx watch` (recarga automática) en `http://localhost:3000`. El puerto está fijo en el código, no es configurable por variable de entorno todavía.
+Corre con `tsx watch` (recarga automática) en `http://localhost:3000` (o el puerto de la variable `PORT`, si está definida).
 
 Para un build de producción:
 
@@ -64,6 +65,15 @@ Para un build de producción:
 npm run build
 npm start
 ```
+
+## Documentación de la API (Swagger / OpenAPI)
+
+La API está documentada con OpenAPI 3.0, generado automáticamente desde comentarios JSDoc en `src/index.ts` (ver `src/config/swagger.ts`).
+
+- UI interactiva (Swagger UI): `/docs` — ej. `http://localhost:3000/docs` en local, o `https://axora-backend-production-4e8d.up.railway.app/docs` en producción.
+- Spec crudo en JSON: `/docs.json` — útil para importar en Postman/Insomnia o generar clientes.
+
+Para agregar o modificar un endpoint, actualizar el bloque `@openapi` que está justo encima de la ruta en `src/index.ts`; no hace falta tocar `swagger.ts` salvo que se agregue un schema nuevo reutilizable.
 
 ## Endpoints disponibles
 
@@ -105,6 +115,8 @@ curl http://localhost:3000/users \
 ```
 
 Sin token o con uno inválido/expirado devuelve `401` o `403`.
+
+Ver `/docs` para el detalle completo de cada endpoint (schemas de request/response, códigos de error).
 
 ## Notas
 

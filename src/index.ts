@@ -1,16 +1,59 @@
 import express from "express";
 import cors from "cors";
+import swaggerUi from "swagger-ui-express";
 import { pool } from "./config/database.js";
 import { authenticateToken } from "./middleware/auth.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { corsOptions } from "./config/cors.js";
+import { swaggerSpec } from "./config/swagger.js";
 
 const app = express();
 
 app.use(cors(corsOptions));
 app.use(express.json());
 
+app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.get("/docs.json", (req, res) => {
+  res.json(swaggerSpec);
+});
+
+/**
+ * @openapi
+ * /users:
+ *   get:
+ *     summary: Lista los usuarios registrados
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de usuarios
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/User'
+ *       401:
+ *         description: Token de acceso no proporcionado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       403:
+ *         description: Token inválido o expirado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Error del servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 app.get("/users", authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
@@ -29,6 +72,44 @@ app.get("/users", authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /auth/register:
+ *   post:
+ *     summary: Crea un usuario y su wallet en la misma transacción
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/RegisterInput'
+ *     responses:
+ *       201:
+ *         description: Usuario creado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthResponse'
+ *       400:
+ *         description: Campos faltantes o contraseña con menos de 8 caracteres
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       409:
+ *         description: El usuario o el correo ya están en uso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Error del servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 app.post("/auth/register", async (req, res) => {
   const client = await pool.connect();
 
@@ -88,6 +169,44 @@ app.post("/auth/register", async (req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /auth/login:
+ *   post:
+ *     summary: Inicia sesión y devuelve un JWT
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/LoginInput'
+ *     responses:
+ *       200:
+ *         description: Login exitoso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthResponse'
+ *       400:
+ *         description: Correo o contraseña faltantes
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Credenciales inválidas
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Error del servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 app.post("/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body;
