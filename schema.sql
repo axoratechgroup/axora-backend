@@ -201,3 +201,26 @@ CREATE TABLE notification_outbox (
 CREATE INDEX idx_transactions_wallet_id             ON transactions(wallet_id);
 CREATE INDEX idx_transactions_destination_wallet_id ON transactions(destination_wallet_id);
 CREATE INDEX idx_notification_outbox_status         ON notification_outbox(status);
+
+-- ============================================
+-- TRIGGERS
+-- ============================================
+
+-- Función genérica: actualiza updated_at a la hora actual en cualquier UPDATE
+CREATE OR REPLACE FUNCTION set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_balances_set_updated_at
+    BEFORE UPDATE ON balances
+    FOR EACH ROW
+    EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER trg_notification_outbox_set_updated_at
+    BEFORE UPDATE ON notification_outbox
+    FOR EACH ROW
+    EXECUTE FUNCTION set_updated_at();
