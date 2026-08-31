@@ -141,7 +141,19 @@ app.post("/auth/register", async (req, res) => {
 
     const user = userResult.rows[0];
 
-    await client.query(`INSERT INTO wallets (user_id) VALUES ($1)`, [user.id]);
+    const walletResult = await client.query(
+      `INSERT INTO wallets (user_id)
+   VALUES ($1)
+   RETURNING id`,
+      [user.id]
+    );
+
+    await client.query(
+      `INSERT INTO balances (wallet_id, currency, amount)
+   SELECT $1, code, 0
+   FROM currencies`,
+      [walletResult.rows[0].id]
+    );
 
     await client.query("COMMIT");
 
