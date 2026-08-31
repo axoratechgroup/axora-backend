@@ -254,6 +254,59 @@ app.post("/auth/login", async (req, res) => {
 
 /**
  * @openapi
+ * /wallet:
+ *   get:
+ *     summary: Devuelve la wallet y los balances del usuario autenticado
+ *     tags: [Wallet]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Wallet con sus balances por moneda
+ *       401:
+ *         description: Token de acceso no proporcionado
+ *       403:
+ *         description: Token inválido o expirado
+ *       404:
+ *         description: El usuario no tiene wallet
+ *       500:
+ *         description: Error del servidor
+ */
+app.get("/wallet", authenticateToken, async (req, res) => {
+  try {
+    const walletResult = await pool.query(
+      `SELECT id, created_at FROM wallets WHERE user_id = $1`,
+      [req.user!.id],
+    );
+
+    const wallet = walletResult.rows[0];
+
+    if (!wallet) {
+      return res.status(404).json({ error: "El usuario no tiene wallet" });
+    }
+
+    const balancesResult = await pool.query(
+      `SELECT b.currency, c.name AS currency_name, c.symbol, b.amount, b.updated_at
+       FROM balances b
+       JOIN currencies c ON c.code = b.currency
+       WHERE b.wallet_id = $1
+       ORDER BY b.currency`,
+      [wallet.id],
+    );
+
+    res.json({
+      wallet_id: wallet.id,
+      created_at: wallet.created_at,
+      balances: balancesResult.rows,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al obtener la wallet" });
+  }
+});
+
+/**
+ * @openapi
  * /admin/users:
  *   get:
  *     summary: Lista todos los usuarios (panel de admin)
