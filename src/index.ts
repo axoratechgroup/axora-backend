@@ -311,6 +311,159 @@ app.get("/wallet/transactions", authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /wallet/transfer:
+ *   post:
+ *     summary: Transferir dinero a otro usuario
+ *     tags: [Wallet]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [recipient_email, currency, amount]
+ *             properties:
+ *               recipient_email:
+ *                 type: string
+ *               currency:
+ *                 type: string
+ *               amount:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: Transferencia realizada
+ *       400:
+ *         description: Datos inválidos, fondos insuficientes, o auto-transferencia
+ *       404:
+ *         description: Destinatario no encontrado
+ */
+app.post("/wallet/transfer", authenticateToken, async (req, res) => {
+  const { recipient_email, currency } = req.body;
+  const amount = Number(req.body.amount);
+
+  if (!recipient_email || !currency || !req.body.amount) {
+    return res.status(400).json({ error: "Faltan datos: recipient_email, currency y amount son requeridos" });
+  }
+
+  if (!(amount > 0)) {
+    return res.status(400).json({ error: "El monto debe ser mayor a 0" });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // 1. Wallet del que envía
+    const senderWalletResult = await client.query(
+      "SELECT id FROM wallets WHERE user_id = $1",
+      [req.user.id]
+    );
+    const senderWalletId = senderWalletResult.rows[0].id;
+
+    // 2. Usuario y wallet del destinatario
+    const recipientResult = await client.query(
+      `SELECT u.id AS user_id, w.id AS wallet_id
+       FROM users u
+       JOIN wallets w ON w.user_id = u.id
+       WHERE u.email = $1`,
+      [recipient_email]
+    );
+
+    if (recipientResult.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "No existe un usuario con ese email" });
+    }
+
+    const recipientWalletId = recipientResult.rows[0].wallet_id;
+
+    if (recipientWalletId === senderWalletId) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "No podés transferirte dinero a vos mismo" });
+    }
+
+    // 3. Tu balance en esa moneda, bloqueando la fila
+    const senderBalanceResult = await client.query(
+      "SELECT amount FROM balances WHERE wallet_id = $1 AND currency = $2 FOR UPDATE",
+      [senderWalletId, currency]
+    );
+
+    if (senderBalanceResult.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: `No tenés balance en ${currency}` });
+    }
+
+    const senderBalanceBefore = Number(senderBalanceResult.rows[0].amount);
+
+    if (senderBalanceBefore < amount) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Saldo insuficiente" });
+    }
+
+    const senderBalanceAfter = senderBalanceBefore - amount;
+
+    // 4. Balance del destinatario en esa moneda, también bloqueando la fila
+    const recipientBalanceResult = await client.query(
+      "SELECT amount FROM balances WHERE wallet_id = $1 AND currency = $2 FOR UPDATE",
+      [recipientWalletId, currency]
+    );
+
+    if (recipientBalanceResult.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: `El destinatario no tiene balance en ${currency}` });
+    }
+
+    const recipientBalanceBefore = Number(recipientBalanceResult.rows[0].amount);
+    const recipientBalanceAfter = recipientBalanceBefore + amount;
+
+    // 5. Actualizar los dos balances
+    await client.query(
+      "UPDATE balances SET amount = $1 WHERE wallet_id = $2 AND currency = $3",
+      [senderBalanceAfter, senderWalletId, currency]
+    );
+
+    await client.query(
+      "UPDATE balances SET amount = $1 WHERE wallet_id = $2 AND currency = $3",
+      [recipientBalanceAfter, recipientWalletId, currency]
+    );
+
+    // 6. Guardar la transacción
+    const transactionResult = await client.query(
+      `INSERT INTO transactions (
+         wallet_id, type,
+         from_currency, from_amount, from_balance_before, from_balance_after,
+         to_currency, to_amount, to_balance_before, to_balance_after,
+         destination_wallet_id, status, description
+       ) VALUES ($1, 'TRANSFER', $2, $3, $4, $5, $2, $3, $6, $7, $8, 'COMPLETED', $9)
+       RETURNING *`,
+      [
+        senderWalletId,
+        currency,
+        amount,
+        senderBalanceBefore,
+        senderBalanceAfter,
+        recipientBalanceBefore,
+        recipientBalanceAfter,
+        recipientWalletId,
+        `Transferencia a ${recipient_email}`,
+      ]
+    );
+
+    await client.query("COMMIT");
+
+    res.status(200).json({ transaction: transactionResult.rows[0] });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error(error);
+    res.status(500).json({ error: "Error al procesar la transferencia" });
+  } finally {
+    client.release();
+  }
+});
+
 
 /**
  * @openapi
