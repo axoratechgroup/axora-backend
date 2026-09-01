@@ -20,60 +20,6 @@ app.get("/docs.json", (req, res) => {
 
 /**
  * @openapi
- * /users:
- *   get:
- *     summary: Lista los usuarios registrados
- *     tags: [Users]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Lista de usuarios
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 $ref: '#/components/schemas/User'
- *       401:
- *         description: Token de acceso no proporcionado
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       403:
- *         description: Token inválido o expirado
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       500:
- *         description: Error del servidor
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
-app.get("/users", authenticateToken, async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT id, first_name, last_name, username, email, created_at
-      FROM users
-      ORDER BY created_at DESC`,
-    );
-
-    res.json(result.rows);
-  } catch (error) {
-    console.error(error);
-
-    res.status(500).json({
-      error: "Error al obtener los usuarios",
-    });
-  }
-});
-
-/**
- * @openapi
  * /auth/register:
  *   post:
  *     summary: Crea un usuario y su wallet en la misma transacción
