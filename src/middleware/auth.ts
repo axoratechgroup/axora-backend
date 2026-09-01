@@ -28,3 +28,12 @@ export function authenticateToken(
     return res.status(403).json({ error: "Token inválido o expirado" });
   }
 }
+
+export function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  if (req.user?.role !== "admin") {
+    return res
+      .status(403)
+      .json({ error: "Acceso restringido a administradores" });
+  }
+  next();
+}
