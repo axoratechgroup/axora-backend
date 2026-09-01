@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import swaggerUi from "swagger-ui-express";
 import { pool } from "./config/database.js";
-import { authenticateToken } from "./middleware/auth.js";
+import { authenticateToken, requireAdmin } from "./middleware/auth.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { corsOptions } from "./config/cors.js";
@@ -135,7 +135,7 @@ app.post("/auth/register", async (req, res) => {
     const userResult = await client.query(
       `INSERT INTO users (first_name, last_name, username, email, password_hash)
       VALUES ($1, $2, $3, $4, $5)
-      RETURNING id, first_name, last_name, username, email, created_at`,
+      RETURNING id, first_name, last_name, username, email, role, created_at`,
       [first_name, last_name, username, email, password_hash],
     );
 
@@ -145,20 +145,20 @@ app.post("/auth/register", async (req, res) => {
       `INSERT INTO wallets (user_id)
    VALUES ($1)
    RETURNING id`,
-      [user.id]
+      [user.id],
     );
 
     await client.query(
       `INSERT INTO balances (wallet_id, currency, amount)
    SELECT $1, code, 0
    FROM currencies`,
-      [walletResult.rows[0].id]
+      [walletResult.rows[0].id],
     );
 
     await client.query("COMMIT");
 
     const token = jwt.sign(
-      { id: user.id, email: user.email },
+      { id: user.id, email: user.email, role: user.role },
       process.env.JWT_SECRET!,
       {
         expiresIn: "2h",
@@ -230,7 +230,7 @@ app.post("/auth/login", async (req, res) => {
     }
 
     const result = await pool.query(
-      `SELECT id, first_name, last_name, username, email, password_hash
+      `SELECT id, first_name, last_name, username, email, role, password_hash
        FROM users
        WHERE email = $1`,
       [email],
@@ -248,7 +248,7 @@ app.post("/auth/login", async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user.id, email: user.email },
+      { id: user.id, email: user.email, role: user.role },
       process.env.JWT_SECRET!,
       {
         expiresIn: "2h",
@@ -335,7 +335,7 @@ app.get("/wallet", authenticateToken, async (req, res) => {
  *       500:
  *         description: Error del servidor
  */
-app.get("/admin/users", authenticateToken, async (req, res) => {
+app.get("/admin/users", authenticateToken, requireAdmin, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, first_name, last_name, username, email, created_at
@@ -368,10 +368,14 @@ app.get("/admin/users", authenticateToken, async (req, res) => {
  *       500:
  *         description: Error del servidor
  */
-app.get("/admin/transactions", authenticateToken, async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT
+app.get(
+  "/admin/transactions",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const result = await pool.query(
+        `SELECT
          t.id,
          t.type,
          t.status,
@@ -388,13 +392,14 @@ app.get("/admin/transactions", authenticateToken, async (req, res) => {
        JOIN wallets w ON w.id = t.wallet_id
        JOIN users u ON u.id = w.user_id
        ORDER BY t.created_at DESC`,
-    );
+      );
 
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: "Error al obtener las transacciones" });
-  }
-});
+      res.json(result.rows);
+    } catch (error) {
+      res.status(500).json({ error: "Error al obtener las transacciones" });
+    }
+  },
+);
 
 app.listen(process.env.PORT || 3000, () => {
   console.log("🚀 AXORA Backend corriendo en http://localhost:3000");
