@@ -311,6 +311,97 @@ app.get("/wallet/transactions", authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /wallet/topup:
+ *   post:
+ *     summary: Cargar saldo a tu propia wallet
+ *     tags: [Wallet]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [currency, amount]
+ *             properties:
+ *               currency:
+ *                 type: string
+ *               amount:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: Carga realizada
+ *       400:
+ *         description: Datos inválidos o moneda no soportada
+ */
+app.post("/wallet/topup", authenticateToken, async (req, res) => {
+  const { currency } = req.body;
+  const amount = Number(req.body.amount);
+
+  if (!currency || !req.body.amount) {
+    return res.status(400).json({ error: "Faltan datos: currency y amount son requeridos" });
+  }
+
+  if (!(amount > 0)) {
+    return res.status(400).json({ error: "El monto debe ser mayor a 0" });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // 1. Tu wallet
+    const walletResult = await client.query(
+      "SELECT id FROM wallets WHERE user_id = $1",
+      [req.user.id]
+    );
+    const walletId = walletResult.rows[0].id;
+
+    // 2. Tu balance actual en esa moneda, bloqueando la fila
+    const balanceResult = await client.query(
+      "SELECT amount FROM balances WHERE wallet_id = $1 AND currency = $2 FOR UPDATE",
+      [walletId, currency]
+    );
+
+    if (balanceResult.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: `Moneda no soportada: ${currency}` });
+    }
+
+    const balanceBefore = Number(balanceResult.rows[0].amount);
+    const balanceAfter = balanceBefore + amount;
+
+    // 3. Actualizar el balance
+    await client.query(
+      "UPDATE balances SET amount = $1 WHERE wallet_id = $2 AND currency = $3",
+      [balanceAfter, walletId, currency]
+    );
+
+    // 4. Guardar la transacción
+    const transactionResult = await client.query(
+      `INSERT INTO transactions (
+         wallet_id, type,
+         to_currency, to_amount, to_balance_before, to_balance_after,
+         status, description
+       ) VALUES ($1, 'TOP_UP', $2, $3, $4, $5, 'COMPLETED', $6)
+       RETURNING *`,
+      [walletId, currency, amount, balanceBefore, balanceAfter, "Carga de saldo"]
+    );
+
+    await client.query("COMMIT");
+
+    res.status(200).json({ transaction: transactionResult.rows[0] });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error(error);
+    res.status(500).json({ error: "Error al procesar la carga" });
+  } finally {
+    client.release();
+  }
+});
 
 /**
  * @openapi
