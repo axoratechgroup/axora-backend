@@ -263,6 +263,55 @@ app.get("/wallet", authenticateToken, async (req, res) => {
   }
 });
 
+
+/**
+ * @openapi
+ * /wallet/transactions:
+ *   get:
+ *     summary: Devuelve las transacciones del usuario autenticado
+ *     tags: [Wallet]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de transacciones del usuario
+ *       401:
+ *         description: Token de acceso no proporcionado
+ *       404:
+ *         description: El usuario no tiene wallet
+ *       500:
+ *         description: Error del servidor
+ */
+app.get("/wallet/transactions", authenticateToken, async (req, res) => {
+  try {
+    const walletResult = await pool.query(
+      `SELECT id FROM wallets WHERE user_id = $1`,
+      [req.user!.id],
+    );
+
+    const wallet = walletResult.rows[0];
+
+    if (!wallet) {
+      return res.status(404).json({ error: "El usuario no tiene wallet" });
+    }
+
+    const transactionsResult = await pool.query(
+      `SELECT id, type, status, from_currency, from_amount, to_currency, to_amount,
+              applied_exchange_rate, description, created_at
+       FROM transactions
+       WHERE wallet_id = $1
+       ORDER BY created_at DESC`,
+      [wallet.id],
+    );
+
+    res.json({ transactions: transactionsResult.rows });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al obtener las transacciones" });
+  }
+});
+
+
 /**
  * @openapi
  * /admin/users:
