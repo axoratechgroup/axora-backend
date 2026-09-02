@@ -264,17 +264,33 @@ walletRouter.post("/wallet/transfer", authenticateToken, async (req, res) => {
       return res.status(400).json({ error: "No podés transferirte dinero a vos mismo" });
     }
 
-    const senderBalanceResult = await client.query(
-      "SELECT amount FROM balances WHERE wallet_id = $1 AND currency = $2 FOR UPDATE",
-      [senderWalletId, currency]
+    // Bloqueamos las dos filas de balance EN UNA SOLA CONSULTA, ordenadas por
+    // wallet_id (no por quién envía o recibe). Esto evita un deadlock: si dos
+    // transferencias en direcciones opuestas (A→B y B→A) llegan al mismo tiempo,
+    // ambas piden los bloqueos en el mismo orden, así que una simplemente espera
+    // a la otra en vez de bloquearse mutuamente en un círculo.
+    const balancesResult = await client.query(
+      `SELECT wallet_id, amount FROM balances
+       WHERE wallet_id IN ($1, $2) AND currency = $3
+       ORDER BY wallet_id
+       FOR UPDATE`,
+      [senderWalletId, recipientWalletId, currency]
     );
 
-    if (senderBalanceResult.rows.length === 0) {
+    const senderBalanceRow = balancesResult.rows.find((r) => r.wallet_id === senderWalletId);
+    const recipientBalanceRow = balancesResult.rows.find((r) => r.wallet_id === recipientWalletId);
+
+    if (!senderBalanceRow) {
       await client.query("ROLLBACK");
       return res.status(400).json({ error: `No tenés balance en ${currency}` });
     }
 
-    const senderBalanceBefore = Number(senderBalanceResult.rows[0].amount);
+    if (!recipientBalanceRow) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: `El destinatario no tiene balance en ${currency}` });
+    }
+
+    const senderBalanceBefore = Number(senderBalanceRow.amount);
 
     if (senderBalanceBefore < amount) {
       await client.query("ROLLBACK");
@@ -283,17 +299,7 @@ walletRouter.post("/wallet/transfer", authenticateToken, async (req, res) => {
 
     const senderBalanceAfter = senderBalanceBefore - amount;
 
-    const recipientBalanceResult = await client.query(
-      "SELECT amount FROM balances WHERE wallet_id = $1 AND currency = $2 FOR UPDATE",
-      [recipientWalletId, currency]
-    );
-
-    if (recipientBalanceResult.rows.length === 0) {
-      await client.query("ROLLBACK");
-      return res.status(400).json({ error: `El destinatario no tiene balance en ${currency}` });
-    }
-
-    const recipientBalanceBefore = Number(recipientBalanceResult.rows[0].amount);
+    const recipientBalanceBefore = Number(recipientBalanceRow.amount);
     const recipientBalanceAfter = recipientBalanceBefore + amount;
 
     await client.query(
