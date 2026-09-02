@@ -16,9 +16,7 @@ export const walletRouter = Router();
  *       200:
  *         description: Wallet con sus balances por moneda
  *       401:
- *         description: Token de acceso no proporcionado
- *       403:
- *         description: Token inválido o expirado
+ *         description: Token no proporcionado, inválido o expirado
  *       404:
  *         description: El usuario no tiene wallet
  *       500:
