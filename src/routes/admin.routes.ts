@@ -16,9 +16,9 @@ export const adminRouter = Router();
  *       200:
  *         description: Lista de usuarios
  *       401:
- *         description: Token de acceso no proporcionado
+ *         description: Token no proporcionado, inválido o expirado
  *       403:
- *         description: Token inválido o expirado
+ *         description: Acceso restringido a administradores
  *       500:
  *         description: Error del servidor
  */
@@ -49,9 +49,9 @@ adminRouter.get("/admin/users", authenticateToken, requireAdmin, async (req, res
  *       200:
  *         description: Lista de transacciones
  *       401:
- *         description: Token de acceso no proporcionado
+ *         description: Token no proporcionado, inválido o expirado
  *       403:
- *         description: Token inválido o expirado
+ *         description: Acceso restringido a administradores
  *       500:
  *         description: Error del servidor
  */
