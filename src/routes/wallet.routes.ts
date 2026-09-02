@@ -1,9 +1,19 @@
 import { Router } from "express";
 import { pool } from "../config/database.js";
 import { authenticateToken } from "../middleware/auth.js";
+import type { Pool, PoolClient } from "pg";
 
 export const walletRouter = Router();
 
+
+
+async function getWalletByUserId(userId: string, executor: Pool | PoolClient = pool) {
+  const result = await executor.query(
+    "SELECT id, created_at FROM wallets WHERE user_id = $1",
+    [userId],
+  );
+  return result.rows[0];
+}
 /**
  * @openapi
  * /wallet:
@@ -24,12 +34,7 @@ export const walletRouter = Router();
  */
 walletRouter.get("/wallet", authenticateToken, async (req, res) => {
   try {
-    const walletResult = await pool.query(
-      `SELECT id, created_at FROM wallets WHERE user_id = $1`,
-      [req.user!.id],
-    );
-
-    const wallet = walletResult.rows[0];
+    const wallet = await getWalletByUserId(req.user!.id);
 
     if (!wallet) {
       return res.status(404).json({ error: "El usuario no tiene wallet" });
@@ -75,12 +80,7 @@ walletRouter.get("/wallet", authenticateToken, async (req, res) => {
  */
 walletRouter.get("/wallet/transactions", authenticateToken, async (req, res) => {
   try {
-    const walletResult = await pool.query(
-      `SELECT id FROM wallets WHERE user_id = $1`,
-      [req.user!.id],
-    );
-
-    const wallet = walletResult.rows[0];
+    const wallet = await getWalletByUserId(req.user!.id);
 
     if (!wallet) {
       return res.status(404).json({ error: "El usuario no tiene wallet" });
@@ -150,11 +150,8 @@ walletRouter.post("/wallet/topup", authenticateToken, async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    const walletResult = await client.query(
-      "SELECT id FROM wallets WHERE user_id = $1",
-      [req.user!.id]
-    );
-    const walletId = walletResult.rows[0].id;
+    const wallet = await getWalletByUserId(req.user!.id, client);
+    const walletId = wallet!.id;
 
     const balanceResult = await client.query(
       "SELECT amount FROM balances WHERE wallet_id = $1 AND currency = $2 FOR UPDATE",
@@ -242,11 +239,8 @@ walletRouter.post("/wallet/transfer", authenticateToken, async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    const senderWalletResult = await client.query(
-      "SELECT id FROM wallets WHERE user_id = $1",
-      [req.user!.id]
-    );
-    const senderWalletId = senderWalletResult.rows[0].id;
+    const senderWallet = await getWalletByUserId(req.user!.id, client);
+    const senderWalletId = senderWallet!.id;
 
     const recipientResult = await client.query(
       `SELECT u.id AS user_id, w.id AS wallet_id
