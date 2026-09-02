@@ -89,15 +89,21 @@ walletRouter.get("/wallet/transactions", authenticateToken, async (req, res) => 
     }
 
     const transactionsResult = await pool.query(
-      `SELECT id, type, status, from_currency, from_amount, to_currency, to_amount,
+      `SELECT id, type, status, wallet_id, destination_wallet_id,
+              from_currency, from_amount, to_currency, to_amount,
               applied_exchange_rate, description, created_at
        FROM transactions
-       WHERE wallet_id = $1
+       WHERE wallet_id = $1 OR destination_wallet_id = $1
        ORDER BY created_at DESC`,
       [wallet.id],
     );
 
-    res.json({ transactions: transactionsResult.rows });
+    const transactions = transactionsResult.rows.map((tx) => ({
+      ...tx,
+      direction: tx.wallet_id === wallet.id ? "sent" : "received",
+    }));
+
+    res.json({ transactions });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Error al obtener las transacciones" });
