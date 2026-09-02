@@ -47,7 +47,8 @@ authRouter.post("/auth/register", async (req, res) => {
   const client = await pool.connect();
 
   try {
-    const { first_name, last_name, username, email, password } = req.body;
+    const { first_name, last_name, username, password } = req.body;
+    const email = req.body.email?.trim().toLowerCase();
 
     if (!first_name || !last_name || !username || !email || !password) {
       return res.status(400).json({
@@ -154,7 +155,8 @@ authRouter.post("/auth/register", async (req, res) => {
  */
 authRouter.post("/auth/login", async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { password } = req.body;
+    const email = req.body.email?.trim().toLowerCase();
 
     if (!email || !password) {
       return res
