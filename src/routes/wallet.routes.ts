@@ -15,6 +15,37 @@ async function getWalletByUserId(userId: string, executor: Pool | PoolClient = p
   );
   return result.rows[0];
 }
+
+
+const MAX_WALLET_TOTAL_USD = 10000;
+const MAX_TRANSFER_USD = 2000;
+
+/**
+ * Suma el valor de todos los balances de una wallet, convertidos a USD con
+ * la cotización actual. Se usa para no dejar que la carga de saldo empuje
+ * el total de la cuenta por encima del límite permitido.
+ */
+async function getWalletTotalInUsd(
+  walletId: string,
+  executor: Pool | PoolClient = pool,
+): Promise<number> {
+  const result = await executor.query(
+    "SELECT currency, amount FROM balances WHERE wallet_id = $1",
+    [walletId],
+  );
+
+  let totalUsd = 0;
+  for (const row of result.rows) {
+    const amount = Number(row.amount);
+    if (amount === 0) continue;
+    const rate = row.currency === "USD" ? 1 : await getExchangeRate(row.currency, "USD");
+    totalUsd += amount * rate;
+  }
+
+  return totalUsd;
+}
+
+
 /**
  * @openapi
  * /wallet:
@@ -164,6 +195,16 @@ walletRouter.post("/wallet/topup", authenticateToken, async (req, res) => {
       return res.status(400).json({ error: `Moneda no soportada: ${currency}` });
     }
 
+    const amountInUsd = currency === "USD" ? amount : amount * (await getExchangeRate(currency, "USD"));
+    const currentTotalUsd = await getWalletTotalInUsd(walletId, client);
+
+    if (currentTotalUsd + amountInUsd > MAX_WALLET_TOTAL_USD) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        error: `No podés cargar ese monto: superarías el límite de USD ${MAX_WALLET_TOTAL_USD} en tu cuenta (actualmente tenés el equivalente a USD ${currentTotalUsd.toFixed(2)})`,
+      });
+    }
+
     const balanceBefore = Number(balanceResult.rows[0].amount);
     const balanceAfter = balanceBefore + amount;
 
@@ -234,6 +275,13 @@ walletRouter.post("/wallet/transfer", authenticateToken, async (req, res) => {
 
   if (!(amount > 0)) {
     return res.status(400).json({ error: "El monto debe ser mayor a 0" });
+  }
+
+  const amountInUsd = currency === "USD" ? amount : amount * (await getExchangeRate(currency, "USD"));
+  if (amountInUsd > MAX_TRANSFER_USD) {
+    return res.status(400).json({
+      error: `No podés transferir más de USD ${MAX_TRANSFER_USD} por operación (esto equivale a USD ${amountInUsd.toFixed(2)})`,
+    });
   }
 
   const client = await pool.connect();
