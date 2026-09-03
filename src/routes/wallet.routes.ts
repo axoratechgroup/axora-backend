@@ -208,9 +208,9 @@ walletRouter.post("/wallet/topup", authenticateToken, async (req, res) => {
  *         application/json:
  *           schema:
  *             type: object
- *             required: [recipient_email, currency, amount]
+ *             required: [recipient_username, currency, amount]
  *             properties:
- *               recipient_email:
+ *               recipient_username:
  *                 type: string
  *               currency:
  *                 type: string
@@ -225,11 +225,11 @@ walletRouter.post("/wallet/topup", authenticateToken, async (req, res) => {
  *         description: Destinatario no encontrado
  */
 walletRouter.post("/wallet/transfer", authenticateToken, async (req, res) => {
-  const { recipient_email, currency } = req.body;
+  const { recipient_username, currency } = req.body;
   const amount = Number(req.body.amount);
 
-  if (!recipient_email || !currency || !req.body.amount) {
-    return res.status(400).json({ error: "Faltan datos: recipient_email, currency y amount son requeridos" });
+  if (!recipient_username || !currency || !req.body.amount) {
+    return res.status(400).json({ error: "Faltan datos: recipient_username, currency y amount son requeridos" });
   }
 
   if (!(amount > 0)) {
@@ -247,13 +247,13 @@ walletRouter.post("/wallet/transfer", authenticateToken, async (req, res) => {
       `SELECT u.id AS user_id, w.id AS wallet_id
        FROM users u
        JOIN wallets w ON w.user_id = u.id
-       WHERE u.email = $1`,
-      [recipient_email]
+       WHERE u.username = $1`,
+      [recipient_username]
     );
 
     if (recipientResult.rows.length === 0) {
       await client.query("ROLLBACK");
-      return res.status(404).json({ error: "No existe un usuario con ese email" });
+      return res.status(404).json({ error: "No existe un usuario con ese nombre de usuario" });
     }
 
     const recipientWalletId = recipientResult.rows[0].wallet_id;
@@ -328,7 +328,7 @@ walletRouter.post("/wallet/transfer", authenticateToken, async (req, res) => {
         recipientBalanceBefore,
         recipientBalanceAfter,
         recipientWalletId,
-        `Transferencia a ${recipient_email}`,
+        `Transferencia a ${recipient_username}`,
       ]
     );
 
