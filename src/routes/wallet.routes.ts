@@ -15,6 +15,37 @@ async function getWalletByUserId(userId: string, executor: Pool | PoolClient = p
   );
   return result.rows[0];
 }
+
+
+const MAX_WALLET_TOTAL_USD = 10000;
+const MAX_TRANSFER_USD = 2000;
+const SWAP_FEE_PERCENTAGE = 0.003; // 0.3% de comisión en cada cambio de moneda
+/**
+ * Suma el valor de todos los balances de una wallet, convertidos a USD con
+ * la cotización actual. Se usa para no dejar que la carga de saldo empuje
+ * el total de la cuenta por encima del límite permitido.
+ */
+async function getWalletTotalInUsd(
+  walletId: string,
+  executor: Pool | PoolClient = pool,
+): Promise<number> {
+  const result = await executor.query(
+    "SELECT currency, amount FROM balances WHERE wallet_id = $1",
+    [walletId],
+  );
+
+  let totalUsd = 0;
+  for (const row of result.rows) {
+    const amount = Number(row.amount);
+    if (amount === 0) continue;
+    const rate = row.currency === "USD" ? 1 : await getExchangeRate(row.currency, "USD");
+    totalUsd += amount * rate;
+  }
+
+  return totalUsd;
+}
+
+
 /**
  * @openapi
  * /wallet:
@@ -164,6 +195,16 @@ walletRouter.post("/wallet/topup", authenticateToken, async (req, res) => {
       return res.status(400).json({ error: `Moneda no soportada: ${currency}` });
     }
 
+    const amountInUsd = currency === "USD" ? amount : amount * (await getExchangeRate(currency, "USD"));
+    const currentTotalUsd = await getWalletTotalInUsd(walletId, client);
+
+    if (currentTotalUsd + amountInUsd > MAX_WALLET_TOTAL_USD) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        error: `No podés cargar ese monto: superarías el límite de USD ${MAX_WALLET_TOTAL_USD} en tu cuenta (actualmente tenés el equivalente a USD ${currentTotalUsd.toFixed(2)})`,
+      });
+    }
+
     const balanceBefore = Number(balanceResult.rows[0].amount);
     const balanceAfter = balanceBefore + amount;
 
@@ -208,9 +249,9 @@ walletRouter.post("/wallet/topup", authenticateToken, async (req, res) => {
  *         application/json:
  *           schema:
  *             type: object
- *             required: [recipient_email, currency, amount]
+ *             required: [recipient_username, currency, amount]
  *             properties:
- *               recipient_email:
+ *               recipient_username:
  *                 type: string
  *               currency:
  *                 type: string
@@ -225,15 +266,22 @@ walletRouter.post("/wallet/topup", authenticateToken, async (req, res) => {
  *         description: Destinatario no encontrado
  */
 walletRouter.post("/wallet/transfer", authenticateToken, async (req, res) => {
-  const { recipient_email, currency } = req.body;
+  const { recipient_username, currency } = req.body;
   const amount = Number(req.body.amount);
 
-  if (!recipient_email || !currency || !req.body.amount) {
-    return res.status(400).json({ error: "Faltan datos: recipient_email, currency y amount son requeridos" });
+  if (!recipient_username || !currency || !req.body.amount) {
+    return res.status(400).json({ error: "Faltan datos: recipient_username, currency y amount son requeridos" });
   }
 
   if (!(amount > 0)) {
     return res.status(400).json({ error: "El monto debe ser mayor a 0" });
+  }
+
+  const amountInUsd = currency === "USD" ? amount : amount * (await getExchangeRate(currency, "USD"));
+  if (amountInUsd > MAX_TRANSFER_USD) {
+    return res.status(400).json({
+      error: `No podés transferir más de USD ${MAX_TRANSFER_USD} por operación (esto equivale a USD ${amountInUsd.toFixed(2)})`,
+    });
   }
 
   const client = await pool.connect();
@@ -247,13 +295,13 @@ walletRouter.post("/wallet/transfer", authenticateToken, async (req, res) => {
       `SELECT u.id AS user_id, w.id AS wallet_id
        FROM users u
        JOIN wallets w ON w.user_id = u.id
-       WHERE u.email = $1`,
-      [recipient_email]
+       WHERE u.username = $1`,
+      [recipient_username]
     );
 
     if (recipientResult.rows.length === 0) {
       await client.query("ROLLBACK");
-      return res.status(404).json({ error: "No existe un usuario con ese email" });
+      return res.status(404).json({ error: "No existe un usuario con ese nombre de usuario" });
     }
 
     const recipientWalletId = recipientResult.rows[0].wallet_id;
@@ -328,7 +376,7 @@ walletRouter.post("/wallet/transfer", authenticateToken, async (req, res) => {
         recipientBalanceBefore,
         recipientBalanceAfter,
         recipientWalletId,
-        `Transferencia a ${recipient_email}`,
+        `Transferencia a ${recipient_username}`,
       ]
     );
 
@@ -426,7 +474,9 @@ walletRouter.post("/wallet/exchange", authenticateToken, async (req, res) => {
     }
 
     const rate = await getExchangeRate(from_currency, to_currency);
-    const toAmount = amount * rate;
+    const grossToAmount = amount * rate;
+    const feeAmount = grossToAmount * SWAP_FEE_PERCENTAGE;
+    const toAmount = grossToAmount - feeAmount;
 
     const fromBalanceAfter = fromBalanceBefore - amount;
     const toBalanceBefore = Number(toBalanceRow.amount);
@@ -446,8 +496,8 @@ walletRouter.post("/wallet/exchange", authenticateToken, async (req, res) => {
          wallet_id, type,
          from_currency, from_amount, from_balance_before, from_balance_after,
          to_currency, to_amount, to_balance_before, to_balance_after,
-         applied_exchange_rate, status, description
-       ) VALUES ($1, 'SWAP', $2, $3, $4, $5, $6, $7, $8, $9, $10, 'COMPLETED', $11)
+         applied_exchange_rate, status, description, metadata
+       ) VALUES ($1, 'SWAP', $2, $3, $4, $5, $6, $7, $8, $9, $10, 'COMPLETED', $11, $12)
        RETURNING *`,
       [
         walletId,
@@ -460,7 +510,13 @@ walletRouter.post("/wallet/exchange", authenticateToken, async (req, res) => {
         toBalanceBefore,
         toBalanceAfter,
         rate,
-        `Cambio de ${from_currency} a ${to_currency}`,
+        `Cambio de ${from_currency} a ${to_currency} (incluye comisión del ${(SWAP_FEE_PERCENTAGE * 100).toFixed(1)}%)`,
+        JSON.stringify({
+          fee_percentage: SWAP_FEE_PERCENTAGE,
+          fee_amount: feeAmount,
+          fee_currency: to_currency,
+          gross_to_amount: grossToAmount,
+        }),
       ]
     );
 
