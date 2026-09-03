@@ -19,7 +19,7 @@ async function getWalletByUserId(userId: string, executor: Pool | PoolClient = p
 
 const MAX_WALLET_TOTAL_USD = 10000;
 const MAX_TRANSFER_USD = 2000;
-
+const SWAP_FEE_PERCENTAGE = 0.003; // 0.3% de comisión en cada cambio de moneda
 /**
  * Suma el valor de todos los balances de una wallet, convertidos a USD con
  * la cotización actual. Se usa para no dejar que la carga de saldo empuje
@@ -474,7 +474,9 @@ walletRouter.post("/wallet/exchange", authenticateToken, async (req, res) => {
     }
 
     const rate = await getExchangeRate(from_currency, to_currency);
-    const toAmount = amount * rate;
+    const grossToAmount = amount * rate;
+    const feeAmount = grossToAmount * SWAP_FEE_PERCENTAGE;
+    const toAmount = grossToAmount - feeAmount;
 
     const fromBalanceAfter = fromBalanceBefore - amount;
     const toBalanceBefore = Number(toBalanceRow.amount);
@@ -494,8 +496,8 @@ walletRouter.post("/wallet/exchange", authenticateToken, async (req, res) => {
          wallet_id, type,
          from_currency, from_amount, from_balance_before, from_balance_after,
          to_currency, to_amount, to_balance_before, to_balance_after,
-         applied_exchange_rate, status, description
-       ) VALUES ($1, 'SWAP', $2, $3, $4, $5, $6, $7, $8, $9, $10, 'COMPLETED', $11)
+         applied_exchange_rate, status, description, metadata
+       ) VALUES ($1, 'SWAP', $2, $3, $4, $5, $6, $7, $8, $9, $10, 'COMPLETED', $11, $12)
        RETURNING *`,
       [
         walletId,
@@ -508,7 +510,13 @@ walletRouter.post("/wallet/exchange", authenticateToken, async (req, res) => {
         toBalanceBefore,
         toBalanceAfter,
         rate,
-        `Cambio de ${from_currency} a ${to_currency}`,
+        `Cambio de ${from_currency} a ${to_currency} (incluye comisión del ${(SWAP_FEE_PERCENTAGE * 100).toFixed(1)}%)`,
+        JSON.stringify({
+          fee_percentage: SWAP_FEE_PERCENTAGE,
+          fee_amount: feeAmount,
+          fee_currency: to_currency,
+          gross_to_amount: grossToAmount,
+        }),
       ]
     );
 
