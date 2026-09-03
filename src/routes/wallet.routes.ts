@@ -2,6 +2,7 @@ import { Router } from "express";
 import { pool } from "../config/database.js";
 import { authenticateToken } from "../middleware/auth.js";
 import type { Pool, PoolClient } from "pg";
+import { getExchangeRate } from "../services/exchangeRates.js";
 
 export const walletRouter = Router();
 
@@ -338,6 +339,138 @@ walletRouter.post("/wallet/transfer", authenticateToken, async (req, res) => {
     await client.query("ROLLBACK");
     console.error(error);
     res.status(500).json({ error: "Error al procesar la transferencia" });
+  } finally {
+    client.release();
+  }
+});
+
+/**
+ * @openapi
+ * /wallet/exchange:
+ *   post:
+ *     summary: Compra/vende (cambia) saldo entre dos monedas de tu propia wallet
+ *     tags: [Wallet]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [from_currency, to_currency, amount]
+ *             properties:
+ *               from_currency:
+ *                 type: string
+ *               to_currency:
+ *                 type: string
+ *               amount:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: Cambio realizado
+ *       400:
+ *         description: Datos inválidos, monedas iguales, o fondos insuficientes
+ *       401:
+ *         description: Token no proporcionado, inválido o expirado
+ *       500:
+ *         description: Error del servidor
+ */
+walletRouter.post("/wallet/exchange", authenticateToken, async (req, res) => {
+  const { from_currency, to_currency } = req.body;
+  const amount = Number(req.body.amount);
+
+  if (!from_currency || !to_currency || !req.body.amount) {
+    return res.status(400).json({ error: "Faltan datos: from_currency, to_currency y amount son requeridos" });
+  }
+
+  if (from_currency === to_currency) {
+    return res.status(400).json({ error: "Elegí dos monedas distintas para cambiar" });
+  }
+
+  if (!(amount > 0)) {
+    return res.status(400).json({ error: "El monto debe ser mayor a 0" });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const wallet = await getWalletByUserId(req.user!.id, client);
+    const walletId = wallet!.id;
+
+    // Bloqueamos las dos filas de balance (origen y destino) en una sola
+    // consulta, ordenadas por moneda, para evitar problemas si el mismo
+    // usuario dispara dos cambios al mismo tiempo.
+    const balancesResult = await client.query(
+      `SELECT currency, amount FROM balances
+       WHERE wallet_id = $1 AND currency IN ($2, $3)
+       ORDER BY currency
+       FOR UPDATE`,
+      [walletId, from_currency, to_currency]
+    );
+
+    const fromBalanceRow = balancesResult.rows.find((r) => r.currency === from_currency);
+    const toBalanceRow = balancesResult.rows.find((r) => r.currency === to_currency);
+
+    if (!fromBalanceRow || !toBalanceRow) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Moneda no soportada" });
+    }
+
+    const fromBalanceBefore = Number(fromBalanceRow.amount);
+
+    if (fromBalanceBefore < amount) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Saldo insuficiente" });
+    }
+
+    const rate = await getExchangeRate(from_currency, to_currency);
+    const toAmount = amount * rate;
+
+    const fromBalanceAfter = fromBalanceBefore - amount;
+    const toBalanceBefore = Number(toBalanceRow.amount);
+    const toBalanceAfter = toBalanceBefore + toAmount;
+
+    await client.query(
+      "UPDATE balances SET amount = $1 WHERE wallet_id = $2 AND currency = $3",
+      [fromBalanceAfter, walletId, from_currency]
+    );
+    await client.query(
+      "UPDATE balances SET amount = $1 WHERE wallet_id = $2 AND currency = $3",
+      [toBalanceAfter, walletId, to_currency]
+    );
+
+    const transactionResult = await client.query(
+      `INSERT INTO transactions (
+         wallet_id, type,
+         from_currency, from_amount, from_balance_before, from_balance_after,
+         to_currency, to_amount, to_balance_before, to_balance_after,
+         applied_exchange_rate, status, description
+       ) VALUES ($1, 'SWAP', $2, $3, $4, $5, $6, $7, $8, $9, $10, 'COMPLETED', $11)
+       RETURNING *`,
+      [
+        walletId,
+        from_currency,
+        amount,
+        fromBalanceBefore,
+        fromBalanceAfter,
+        to_currency,
+        toAmount,
+        toBalanceBefore,
+        toBalanceAfter,
+        rate,
+        `Cambio de ${from_currency} a ${to_currency}`,
+      ]
+    );
+
+    await client.query("COMMIT");
+
+    res.status(200).json({ transaction: transactionResult.rows[0] });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error(error);
+    res.status(500).json({ error: "Error al procesar el cambio de moneda" });
   } finally {
     client.release();
   }
