@@ -68,7 +68,7 @@ npm start
 
 ## Documentación de la API (Swagger / OpenAPI)
 
-La API está documentada con OpenAPI 3.0, generado automáticamente desde comentarios JSDoc en `src/index.ts` (ver `src/config/swagger.ts`).
+La API está documentada con OpenAPI 3.0, generado automáticamente desde comentarios JSDoc en las rutas de `src/routes/` (ver `src/config/swagger.ts`).
 
 - UI interactiva (Swagger UI): `/docs` — ej. `http://localhost:3000/docs` en local, o `https://axora-backend-production-4e8d.up.railway.app/docs` en producción.
 - Spec crudo en JSON: `/docs.json` — útil para importar en Postman/Insomnia o generar clientes.
@@ -115,6 +115,32 @@ curl http://localhost:3000/users \
 ```
 
 Sin token o con uno inválido/expirado devuelve `401` o `403`.
+
+### `GET /rates/history`
+
+Devuelve una serie histórica informativa para una tasa de cambio. No requiere autenticación y no se utiliza para confirmar operaciones: el backend recalcula la tasa operativa al ejecutar un intercambio.
+
+Parámetros requeridos:
+
+| Parámetro | Valores | Descripción |
+| --- | --- | --- |
+| `base` | Código ISO de 3 letras | Moneda base, por ejemplo `USD`. |
+| `quote` | Código ISO de 3 letras | Moneda a comparar, por ejemplo `MXN`. |
+| `range` | `7d`, `30d`, `90d` | Período histórico solicitado. |
+
+```bash
+curl "http://localhost:3000/rates/history?base=USD&quote=MXN&range=30d"
+```
+
+La respuesta incluye `base`, `quote`, `range`, `points` ordenados por fecha y la fuente `frankfurter.dev`. Si el proveedor externo no está disponible, devuelve `502` sin exponer detalles internos.
+
+## Tests
+
+```bash
+npm run test:run
+```
+
+Las pruebas del histórico cubren validación de parámetros, normalización de códigos de moneda, orden cronológico de los puntos y manejo de errores del proveedor externo. Las llamadas a proveedores se simulan; la suite no depende de la red.
 
 Ver `/docs` para el detalle completo de cada endpoint (schemas de request/response, códigos de error).
 

@@ -2,6 +2,18 @@ import { pool } from "../config/database.js";
 
 const CACHE_TTL_MINUTES = 60;
 
+export interface ExchangeRateHistoryPoint {
+  date: string;
+  rate: number;
+}
+
+interface FrankfurterRateRow {
+  date: string;
+  base: string;
+  quote: string;
+  rate: number;
+}
+
 /**
  * Devuelve cuántas unidades de `toCurrency` equivalen a 1 unidad de
  * `fromCurrency`. Primero busca una cotización en caché (tabla
@@ -54,4 +66,46 @@ export async function getExchangeRate(
   );
 
   return rate;
+}
+
+/**
+ * Obtiene una serie histórica informativa para un par de monedas. A diferencia
+ * de getExchangeRate, esta función no interviene en el cálculo de una operación
+ * financiera: el gráfico muestra tasas de referencia por fecha.
+ */
+export async function getExchangeRateHistory(
+  fromCurrency: string,
+  toCurrency: string,
+  fromDate: string,
+  toDate: string,
+): Promise<ExchangeRateHistoryPoint[]> {
+  if (fromCurrency === toCurrency) {
+    return [{ date: toDate, rate: 1 }];
+  }
+
+  const query = new URLSearchParams({
+    base: fromCurrency,
+    quotes: toCurrency,
+    from: fromDate,
+    to: toDate,
+  });
+
+  const response = await fetch(`https://api.frankfurter.dev/v2/rates?${query}`);
+
+  if (!response.ok) {
+    throw new Error("No se pudo obtener el histórico de cotizaciones");
+  }
+
+  const data = (await response.json()) as FrankfurterRateRow[];
+
+  return data
+    .filter(
+      (row) =>
+        row.base === fromCurrency &&
+        row.quote === toCurrency &&
+        typeof row.date === "string" &&
+        Number.isFinite(row.rate),
+    )
+    .map((row) => ({ date: row.date, rate: row.rate }))
+    .sort((first, second) => first.date.localeCompare(second.date));
 }
