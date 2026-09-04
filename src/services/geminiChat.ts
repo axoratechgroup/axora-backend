@@ -1,12 +1,12 @@
 const GEMINI_MODEL = "gemini-3.5-flash-lite"; // modelo liviano, con cuota gratuita mucho más generosa
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
-const SYSTEM_INSTRUCTION = `Sos el asistente virtual de Axora, una billetera digital
-multi-moneda. Respondé siempre en español, de forma breve, clara y amigable.
+const SYSTEM_INSTRUCTION = `Eres el asistente virtual de Axora, una billetera digital
+multi-moneda. Responde siempre en español neutro, de forma breve, clara y amigable.
 Cuando el usuario te pida transferir dinero, cargar saldo, o cambiar entre
-monedas, usá la función correspondiente (propose_transfer, propose_topup,
+monedas, usa la función correspondiente (propose_transfer, propose_topup,
 propose_exchange) en vez de responder con texto. Si te faltan datos para
-completar la función (por ejemplo no te dijo el monto o la moneda), pedíselos
+completar la función (por ejemplo no te dijo el monto o la moneda), pidele esos datos
 en un mensaje de texto normal antes de llamar a la función.`;
 
 interface ChatMessage {
