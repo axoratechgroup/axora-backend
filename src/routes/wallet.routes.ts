@@ -201,7 +201,7 @@ walletRouter.post("/wallet/topup", authenticateToken, async (req, res) => {
     if (currentTotalUsd + amountInUsd > MAX_WALLET_TOTAL_USD) {
       await client.query("ROLLBACK");
       return res.status(400).json({
-        error: `No podés cargar ese monto: superarías el límite de USD ${MAX_WALLET_TOTAL_USD} en tu cuenta (actualmente tenés el equivalente a USD ${currentTotalUsd.toFixed(2)})`,
+        error: `No puedes cargar ese monto: superarías el límite de USD ${MAX_WALLET_TOTAL_USD} en tu cuenta (actualmente tienes el equivalente a USD ${currentTotalUsd.toFixed(2)})`,
       });
     }
 
@@ -280,7 +280,7 @@ walletRouter.post("/wallet/transfer", authenticateToken, async (req, res) => {
   const amountInUsd = currency === "USD" ? amount : amount * (await getExchangeRate(currency, "USD"));
   if (amountInUsd > MAX_TRANSFER_USD) {
     return res.status(400).json({
-      error: `No podés transferir más de USD ${MAX_TRANSFER_USD} por operación (esto equivale a USD ${amountInUsd.toFixed(2)})`,
+      error: `No puedes transferir más de USD ${MAX_TRANSFER_USD} por operación (esto equivale a USD ${amountInUsd.toFixed(2)})`,
     });
   }
 
@@ -308,7 +308,7 @@ walletRouter.post("/wallet/transfer", authenticateToken, async (req, res) => {
 
     if (recipientWalletId === senderWalletId) {
       await client.query("ROLLBACK");
-      return res.status(400).json({ error: "No podés transferirte dinero a vos mismo" });
+      return res.status(400).json({ error: "No puedes transferirte dinero a ti mismo" });
     }
 
     // Bloqueamos las dos filas de balance EN UNA SOLA CONSULTA, ordenadas por
@@ -329,7 +329,7 @@ walletRouter.post("/wallet/transfer", authenticateToken, async (req, res) => {
 
     if (!senderBalanceRow) {
       await client.query("ROLLBACK");
-      return res.status(400).json({ error: `No tenés balance en ${currency}` });
+      return res.status(400).json({ error: `No tienes balance en ${currency}` });
     }
 
     if (!recipientBalanceRow) {
@@ -433,7 +433,7 @@ walletRouter.post("/wallet/exchange", authenticateToken, async (req, res) => {
   }
 
   if (from_currency === to_currency) {
-    return res.status(400).json({ error: "Elegí dos monedas distintas para cambiar" });
+    return res.status(400).json({ error: "Elige dos monedas distintas para cambiar" });
   }
 
   if (!(amount > 0)) {
