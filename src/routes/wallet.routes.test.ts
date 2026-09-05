@@ -94,6 +94,29 @@ describe("Wallet Routes", () => {
         ],
       });
     });
+
+    it("utiliza tasas de respaldo si falla el servicio externo al calcular total_in_usd", async () => {
+      getExchangeRateMock.mockRejectedValueOnce(new Error("API externa no disponible"));
+
+      mockQuery
+        .mockResolvedValueOnce({
+          rows: [{ id: "wallet-uuid-1", created_at: "2026-09-01T00:00:00Z" }],
+        })
+        .mockResolvedValueOnce({
+          rows: [{ currency: "EUR", currency_name: "Euro", symbol: "€", amount: "100.00" }],
+        })
+        .mockResolvedValueOnce({
+          rows: [{ currency: "EUR", amount: "100" }],
+        });
+
+      const response = await request(app)
+        .get("/wallet")
+        .set("Authorization", `Bearer ${token}`);
+
+      expect(response.status).toBe(200);
+      // 100 EUR * 1.08 (tasa de respaldo) = 108 USD
+      expect(response.body.total_in_usd).toBe(108);
+    });
   });
 
   describe("GET /wallet/transactions", () => {
