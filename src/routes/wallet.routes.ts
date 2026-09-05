@@ -38,11 +38,15 @@ async function getWalletTotalInUsd(
   for (const row of result.rows) {
     const amount = Number(row.amount);
     if (amount === 0) continue;
-    const rate = row.currency === "USD" ? 1 : await getExchangeRate(row.currency, "USD");
-    totalUsd += amount * rate;
+    try {
+      const rate = row.currency === "USD" ? 1 : await getExchangeRate(row.currency, "USD");
+      totalUsd += amount * rate;
+    } catch (err) {
+      console.error(`Error calculando cotización para ${row.currency} a USD:`, err);
+    }
   }
 
-  return totalUsd;
+  return Math.round(totalUsd * 100) / 100;
 }
 
 
@@ -50,13 +54,13 @@ async function getWalletTotalInUsd(
  * @openapi
  * /wallet:
  *   get:
- *     summary: Devuelve la wallet y los balances del usuario autenticado
+ *     summary: Devuelve la wallet, el total consolidado en USD y los balances del usuario autenticado
  *     tags: [Wallet]
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: Wallet con sus balances por moneda
+ *         description: Wallet con total_in_usd y balances por moneda
  *       401:
  *         description: Token no proporcionado, inválido o expirado
  *       404:
@@ -81,9 +85,12 @@ walletRouter.get("/wallet", authenticateToken, async (req, res) => {
       [wallet.id],
     );
 
+    const totalInUsd = await getWalletTotalInUsd(wallet.id);
+
     res.json({
       wallet_id: wallet.id,
       created_at: wallet.created_at,
+      total_in_usd: totalInUsd,
       balances: balancesResult.rows,
     });
   } catch (error) {
