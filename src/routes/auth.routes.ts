@@ -2,6 +2,11 @@ import { Router } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { pool } from "../config/database.js";
+import {
+  loginRateLimiter,
+  recordFailedLogin,
+  clearLoginAttempts,
+} from "../middleware/rateLimiter.js";
 
 export const authRouter = Router();
 
@@ -165,7 +170,7 @@ authRouter.post("/auth/register", async (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-authRouter.post("/auth/login", async (req, res) => {
+authRouter.post("/auth/login", loginRateLimiter, async (req, res) => {
   try {
     const { password } = req.body;
     const email = req.body.email?.trim().toLowerCase();
@@ -191,8 +196,11 @@ authRouter.post("/auth/login", async (req, res) => {
     const match = await bcrypt.compare(password, hashToCompare);
 
     if (!user || !match) {
+      recordFailedLogin(req);
       return res.status(401).json({ error: "Credenciales inválidas" });
     }
+
+    clearLoginAttempts(req);
 
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role },

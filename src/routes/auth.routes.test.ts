@@ -18,6 +18,7 @@ vi.mock("../config/database.js", () => ({
 }));
 
 import { authRouter } from "./auth.routes.js";
+import { resetRateLimiterForTesting } from "../middleware/rateLimiter.js";
 
 const app = express();
 app.use(express.json());
@@ -28,6 +29,7 @@ describe("Auth Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    resetRateLimiterForTesting();
     process.env.JWT_SECRET = JWT_SECRET;
   });
 
@@ -249,6 +251,32 @@ describe("Auth Routes", () => {
 
       expect(response.status).toBe(401);
       expect(response.body.error).toBe("Credenciales inválidas");
+    });
+
+    it("bloquea con 429 tras 5 intentos fallidos consecutivos", async () => {
+      mockQuery.mockResolvedValue({ rows: [] });
+
+      // Realizar 5 intentos fallidos
+      for (let i = 0; i < 5; i++) {
+        const res = await request(app)
+          .post("/auth/login")
+          .send({
+            email: "atacante@axora.test",
+            password: "wrong",
+          });
+        expect(res.status).toBe(401);
+      }
+
+      // El 6to intento debe ser rechazado inmediatamente con 429
+      const blockedRes = await request(app)
+        .post("/auth/login")
+        .send({
+          email: "atacante@axora.test",
+          password: "wrong",
+        });
+
+      expect(blockedRes.status).toBe(429);
+      expect(blockedRes.body.error).toContain("Demasiados intentos fallidos");
     });
   });
 });
