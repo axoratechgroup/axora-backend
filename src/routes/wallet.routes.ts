@@ -119,19 +119,36 @@ walletRouter.get("/wallet/transactions", authenticateToken, async (req, res) => 
     }
 
     const transactionsResult = await pool.query(
-      `SELECT id, type, status, wallet_id, destination_wallet_id,
-              from_currency, from_amount, to_currency, to_amount,
-              applied_exchange_rate, description, created_at
-       FROM transactions
-       WHERE wallet_id = $1 OR destination_wallet_id = $1
-       ORDER BY created_at DESC`,
+      `SELECT t.id, t.type, t.status, t.wallet_id, t.destination_wallet_id,
+              t.from_currency, t.from_amount, t.to_currency, t.to_amount,
+              t.applied_exchange_rate, t.description, t.created_at,
+              sender.username AS sender_username,
+              recipient.username AS recipient_username
+       FROM transactions t
+       LEFT JOIN wallets sender_wallet ON sender_wallet.id = t.wallet_id
+       LEFT JOIN users sender ON sender.id = sender_wallet.user_id
+       LEFT JOIN wallets recipient_wallet ON recipient_wallet.id = t.destination_wallet_id
+       LEFT JOIN users recipient ON recipient.id = recipient_wallet.user_id
+       WHERE t.wallet_id = $1 OR t.destination_wallet_id = $1
+       ORDER BY t.created_at DESC`,
       [wallet.id],
     );
 
-    const transactions = transactionsResult.rows.map((tx) => ({
-      ...tx,
-      direction: tx.wallet_id === wallet.id ? "sent" : "received",
-    }));
+    const transactions = transactionsResult.rows.map((tx) => {
+      const direction = tx.wallet_id === wallet.id ? "sent" : "received";
+      const { sender_username, recipient_username, ...rest } = tx;
+
+      return {
+        ...rest,
+        direction,
+        counterparty_username:
+          tx.type === "TRANSFER"
+            ? direction === "sent"
+              ? recipient_username
+              : sender_username
+            : null,
+      };
+    });
 
     res.json({ transactions });
   } catch (error) {
