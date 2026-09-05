@@ -89,6 +89,22 @@ describe("Auth Routes", () => {
       expect(mockClientRelease).toHaveBeenCalled();
     });
 
+    it("retorna 400 si el email no tiene formato válido", async () => {
+      const response = await request(app)
+        .post("/auth/register")
+        .send({
+          first_name: "Camila",
+          last_name: "Gómez",
+          username: "camilag",
+          email: "correo-sin-arroba",
+          password: "password123",
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toContain("formato válido");
+      expect(mockClientRelease).toHaveBeenCalled();
+    });
+
     it("retorna 400 si la contraseña tiene menos de 8 caracteres", async () => {
       const response = await request(app)
         .post("/auth/register")

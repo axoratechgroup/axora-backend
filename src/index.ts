@@ -21,6 +21,15 @@ app.get("/docs.json", (req, res) => {
   res.json(swaggerSpec);
 });
 
+app.get("/", (req, res) => {
+  res.json({
+    name: "AXORA API",
+    status: "healthy",
+    version: "1.0.0",
+    docs: "/docs",
+  });
+});
+
 app.use(authRouter);
 app.use(walletRouter);
 app.use(adminRouter);

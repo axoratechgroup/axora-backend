@@ -43,12 +43,17 @@ export const authRouter = Router();
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 authRouter.post("/auth/register", async (req, res) => {
   const client = await pool.connect();
 
   try {
-    const { first_name, last_name, username, password } = req.body;
+    const first_name = req.body.first_name?.trim();
+    const last_name = req.body.last_name?.trim();
+    const username = req.body.username?.trim().toLowerCase();
     const email = req.body.email?.trim().toLowerCase();
+    const password = req.body.password;
 
     if (!first_name || !last_name || !username || !email || !password) {
       return res.status(400).json({
@@ -56,6 +61,13 @@ authRouter.post("/auth/register", async (req, res) => {
           "Todos los campos son obligatorios: nombre, apellido, usuario, correo y contraseña",
       });
     }
+
+    if (!EMAIL_REGEX.test(email)) {
+      return res.status(400).json({
+        error: "El correo electrónico no tiene un formato válido",
+      });
+    }
+
     if (password.length < 8) {
       return res
         .status(400)
@@ -173,12 +185,12 @@ authRouter.post("/auth/login", async (req, res) => {
 
     const user = result.rows[0];
 
-    if (!user) {
-      return res.status(401).json({ error: "Credenciales inválidas" });
-    }
+    // Dummy hash constante para evitar ataques de temporización si el correo no existe
+    const DUMMY_HASH = "$2b$10$7EqJtq98hPqEX7fNZaFWoOijR679q0oPzO24b0f3vR3s1PzV6oX9a";
+    const hashToCompare = user ? user.password_hash : DUMMY_HASH;
+    const match = await bcrypt.compare(password, hashToCompare);
 
-    const match = await bcrypt.compare(password, user.password_hash);
-    if (!match) {
+    if (!user || !match) {
       return res.status(401).json({ error: "Credenciales inválidas" });
     }
 
