@@ -20,10 +20,20 @@ async function getWalletByUserId(userId: string, executor: Pool | PoolClient = p
 const MAX_WALLET_TOTAL_USD = 10000;
 const MAX_TRANSFER_USD = 2000;
 const SWAP_FEE_PERCENTAGE = 0.003; // 0.3% de comisión en cada cambio de moneda
+const FALLBACK_RATES_TO_USD: Record<string, number> = {
+  USD: 1,
+  EUR: 1.08,
+  ARS: 0.00075,
+  COP: 0.00025,
+  MXN: 0.051,
+  BRL: 0.17,
+};
+
 /**
  * Suma el valor de todos los balances de una wallet, convertidos a USD con
  * la cotización actual. Se usa para no dejar que la carga de saldo empuje
- * el total de la cuenta por encima del límite permitido.
+ * el total de la cuenta por encima del límite permitido y para exponer el
+ * patrimonio consolidado en USD al usuario.
  */
 async function getWalletTotalInUsd(
   walletId: string,
@@ -38,11 +48,17 @@ async function getWalletTotalInUsd(
   for (const row of result.rows) {
     const amount = Number(row.amount);
     if (amount === 0) continue;
-    const rate = row.currency === "USD" ? 1 : await getExchangeRate(row.currency, "USD");
-    totalUsd += amount * rate;
+    try {
+      const rate = row.currency === "USD" ? 1 : await getExchangeRate(row.currency, "USD");
+      totalUsd += amount * rate;
+    } catch (err) {
+      console.error(`Error calculando cotización para ${row.currency} a USD:`, err);
+      const fallbackRate = FALLBACK_RATES_TO_USD[row.currency] ?? 0;
+      totalUsd += amount * fallbackRate;
+    }
   }
 
-  return totalUsd;
+  return Math.round(totalUsd * 100) / 100;
 }
 
 
@@ -50,13 +66,13 @@ async function getWalletTotalInUsd(
  * @openapi
  * /wallet:
  *   get:
- *     summary: Devuelve la wallet y los balances del usuario autenticado
+ *     summary: Devuelve la wallet, el total consolidado en USD y los balances del usuario autenticado
  *     tags: [Wallet]
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: Wallet con sus balances por moneda
+ *         description: Wallet con total_in_usd y balances por moneda
  *       401:
  *         description: Token no proporcionado, inválido o expirado
  *       404:
@@ -81,9 +97,12 @@ walletRouter.get("/wallet", authenticateToken, async (req, res) => {
       [wallet.id],
     );
 
+    const totalInUsd = await getWalletTotalInUsd(wallet.id);
+
     res.json({
       wallet_id: wallet.id,
       created_at: wallet.created_at,
+      total_in_usd: totalInUsd,
       balances: balancesResult.rows,
     });
   } catch (error) {

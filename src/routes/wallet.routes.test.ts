@@ -58,7 +58,7 @@ describe("Wallet Routes", () => {
       expect(response.body.error).toBe("El usuario no tiene wallet");
     });
 
-    it("retorna 200 y los balances de la wallet", async () => {
+    it("retorna 200 y los balances de la wallet junto con total_in_usd", async () => {
       mockQuery
         .mockResolvedValueOnce({
           // getWalletByUserId
@@ -70,6 +70,13 @@ describe("Wallet Routes", () => {
             { currency: "USD", currency_name: "Dólar", symbol: "$", amount: "500.00" },
             { currency: "EUR", currency_name: "Euro", symbol: "€", amount: "300.00" },
           ],
+        })
+        .mockResolvedValueOnce({
+          // getWalletTotalInUsd balances
+          rows: [
+            { currency: "USD", amount: "500" },
+            { currency: "EUR", amount: "300" },
+          ],
         });
 
       const response = await request(app)
@@ -80,11 +87,35 @@ describe("Wallet Routes", () => {
       expect(response.body).toEqual({
         wallet_id: "wallet-uuid-1",
         created_at: "2026-09-01T00:00:00Z",
+        total_in_usd: 860,
         balances: [
           { currency: "USD", currency_name: "Dólar", symbol: "$", amount: "500.00" },
           { currency: "EUR", currency_name: "Euro", symbol: "€", amount: "300.00" },
         ],
       });
+    });
+
+    it("utiliza tasas de respaldo si falla el servicio externo al calcular total_in_usd", async () => {
+      getExchangeRateMock.mockRejectedValueOnce(new Error("API externa no disponible"));
+
+      mockQuery
+        .mockResolvedValueOnce({
+          rows: [{ id: "wallet-uuid-1", created_at: "2026-09-01T00:00:00Z" }],
+        })
+        .mockResolvedValueOnce({
+          rows: [{ currency: "EUR", currency_name: "Euro", symbol: "€", amount: "100.00" }],
+        })
+        .mockResolvedValueOnce({
+          rows: [{ currency: "EUR", amount: "100" }],
+        });
+
+      const response = await request(app)
+        .get("/wallet")
+        .set("Authorization", `Bearer ${token}`);
+
+      expect(response.status).toBe(200);
+      // 100 EUR * 1.08 (tasa de respaldo) = 108 USD
+      expect(response.body.total_in_usd).toBe(108);
     });
   });
 
