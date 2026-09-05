@@ -64,7 +64,7 @@ chatRouter.post("/chat", authenticateToken, async (req, res) => {
       const description = describeAction ? describeAction(result.args) : "esa operación";
 
       return res.status(200).json({
-        reply: `¿Confirmás ${description}?`,
+        reply: `¿Confirmas ${description}?`,
         proposedAction: { type: actionType, params: result.args },
       });
     }
