@@ -9,6 +9,8 @@ import { adminRouter } from "./routes/admin.routes.js";
 import { chatRouter } from "./routes/chat.routes.js";
 import { ratesRouter } from "./routes/rates.routes.js";
 
+import { pool } from "./config/database.js";
+
 const app = express();
 
 app.set("trust proxy", 1);
@@ -36,6 +38,21 @@ app.use(adminRouter);
 app.use(chatRouter);
 app.use(ratesRouter);
 
+async function bootstrapAdmin() {
+  try {
+    const res = await pool.query(
+      `UPDATE users SET role = 'admin' WHERE email = 'admintest@axora.com' RETURNING id, email, role;`
+    );
+    if (res.rowCount && res.rowCount > 0) {
+      console.log(`🛡️  Admin configurado exitosamente: ${res.rows[0].email} (${res.rows[0].role})`);
+    }
+  } catch (err: any) {
+    console.warn("Aviso en bootstrap admin:", err?.message);
+  }
+}
+
 app.listen(process.env.PORT || 3000, () => {
   console.log("🚀 AXORA Backend corriendo en http://localhost:3000");
+  bootstrapAdmin();
 });
+
