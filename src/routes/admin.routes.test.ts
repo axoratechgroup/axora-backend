@@ -49,7 +49,7 @@ describe("Admin Routes", () => {
       expect(mockQuery).not.toHaveBeenCalled();
     });
 
-    it("retorna 200 y la lista de usuarios si es admin", async () => {
+    it("retorna 200 y la lista de usuarios (con rol) si es admin", async () => {
       const usersList = [
         {
           id: "u-1",
@@ -57,6 +57,7 @@ describe("Admin Routes", () => {
           last_name: "Pérez",
           username: "juanp",
           email: "juan@axora.test",
+          role: "user",
           created_at: new Date().toISOString(),
         },
       ];
@@ -68,6 +69,118 @@ describe("Admin Routes", () => {
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual(usersList);
+    });
+  });
+
+  describe("PATCH /admin/users/:id/role", () => {
+    it("retorna 401 si no hay token", async () => {
+      const response = await request(app)
+        .patch("/admin/users/u-1/role")
+        .send({ role: "admin" });
+
+      expect(response.status).toBe(401);
+    });
+
+    it("retorna 403 si el usuario no tiene rol admin", async () => {
+      const response = await request(app)
+        .patch("/admin/users/u-1/role")
+        .set("Authorization", `Bearer ${userToken}`)
+        .send({ role: "admin" });
+
+      expect(response.status).toBe(403);
+      expect(mockQuery).not.toHaveBeenCalled();
+    });
+
+    it("retorna 400 si el rol no es 'user' ni 'admin'", async () => {
+      const response = await request(app)
+        .patch("/admin/users/u-1/role")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ role: "superadmin" });
+
+      expect(response.status).toBe(400);
+      expect(mockQuery).not.toHaveBeenCalled();
+    });
+
+    it("retorna 400 si el admin intenta quitarse su propio rol", async () => {
+      const response = await request(app)
+        .patch("/admin/users/admin-1/role")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ role: "user" });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe(
+        "No puedes quitarte tu propio rol de administrador.",
+      );
+      expect(mockQuery).not.toHaveBeenCalled();
+    });
+
+    it("retorna 400 si degradar a este usuario dejaría el sistema sin administradores", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ count: 0 }] });
+
+      const response = await request(app)
+        .patch("/admin/users/u-2/role")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ role: "user" });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe(
+        "Debe existir al menos un administrador en el sistema.",
+      );
+    });
+
+    it("retorna 404 si el usuario no existe", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ count: 1 }] });
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+
+      const response = await request(app)
+        .patch("/admin/users/no-existe/role")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ role: "user" });
+
+      expect(response.status).toBe(404);
+    });
+
+    it("retorna 200 y el usuario actualizado al promover a admin", async () => {
+      const updatedUser = {
+        id: "u-1",
+        first_name: "Juan",
+        last_name: "Pérez",
+        username: "juanp",
+        email: "juan@axora.test",
+        role: "admin",
+      };
+      mockQuery.mockResolvedValueOnce({ rows: [updatedUser] });
+
+      const response = await request(app)
+        .patch("/admin/users/u-1/role")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ role: "admin" });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(updatedUser);
+      // Promover a admin no requiere el chequeo de "último admin"
+      expect(mockQuery).toHaveBeenCalledTimes(1);
+    });
+
+    it("retorna 200 y degrada a un usuario cuando hay otros admins", async () => {
+      const updatedUser = {
+        id: "u-2",
+        first_name: "Ana",
+        last_name: "Gómez",
+        username: "anag",
+        email: "ana@axora.test",
+        role: "user",
+      };
+      mockQuery.mockResolvedValueOnce({ rows: [{ count: 1 }] });
+      mockQuery.mockResolvedValueOnce({ rows: [updatedUser] });
+
+      const response = await request(app)
+        .patch("/admin/users/u-2/role")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ role: "user" });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(updatedUser);
     });
   });
 
