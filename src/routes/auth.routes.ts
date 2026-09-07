@@ -1,7 +1,9 @@
 import { Router } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import crypto from "node:crypto";
 import { pool } from "../config/database.js";
+import { sendEmail } from "../services/email.js";
 import {
   loginRateLimiter,
   recordFailedLogin,
@@ -216,5 +218,177 @@ authRouter.post("/auth/login", loginRateLimiter, async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Error al iniciar sesión" });
+  }
+});
+
+
+/**
+ * @openapi
+ * /auth/forgot-password:
+ *   post:
+ *     summary: Solicita un link para restablecer la contraseña
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email]
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *     responses:
+ *       200:
+ *         description: Mensaje genérico (no revela si el email existe en el sistema)
+ *       400:
+ *         description: Falta el email
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Error del servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+
+authRouter.post("/auth/forgot-password", async (req, res) => {
+  const email = req.body.email?.trim().toLowerCase();
+
+  if (!email) {
+    return res.status(400).json({ error: "Falta el email" });
+  }
+
+  try {
+    const userResult = await pool.query(
+      "SELECT id, first_name FROM users WHERE email = $1",
+      [email],
+    );
+
+    if (userResult.rows.length > 0) {
+      const user = userResult.rows[0];
+      const rawToken = crypto.randomBytes(32).toString("hex");
+      const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+      const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+
+      await pool.query(
+        `INSERT INTO password_resets (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`,
+        [user.id, tokenHash, expiresAt],
+      );
+
+      const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${rawToken}`;
+
+      sendEmail({
+        to: email,
+        subject: "Recuperar tu contraseña de Axora",
+        html: `<p>Hola ${user.first_name},</p><p>Hacé click en el siguiente link para restablecer tu contraseña. Este link expira en 30 minutos.</p><p><a href="${resetLink}">${resetLink}</a></p><p>Si vos no pediste esto, ignorá este mail.</p>`,
+      }).catch((error) => {
+        console.error("Error enviando email de recuperacion:", error);
+      });
+    }
+
+    res.status(200).json({
+      message: "Si el email existe en nuestro sistema, vas a recibir un link para restablecer tu contraseña.",
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "No se pudo procesar la solicitud" });
+  }
+});
+
+/**
+ * @openapi
+ * /auth/reset-password:
+ *   post:
+ *     summary: Restablece la contraseña usando el token recibido por email
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [token, newPassword]
+ *             properties:
+ *               token:
+ *                 type: string
+ *               newPassword:
+ *                 type: string
+ *                 minLength: 8
+ *     responses:
+ *       200:
+ *         description: Contraseña actualizada
+ *       400:
+ *         description: Token inválido, usado, vencido, o contraseña muy corta
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Error del servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+
+authRouter.post("/auth/reset-password", async (req, res) => {
+  const { token, newPassword } = req.body;
+
+  if (!token || !newPassword) {
+    return res.status(400).json({ error: "Faltan datos: token y newPassword son requeridos" });
+  }
+
+  if (newPassword.length < 8) {
+    return res.status(400).json({ error: "La contraseña debe tener al menos 8 caracteres" });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+
+    const resetResult = await client.query(
+      `SELECT id, user_id, expires_at, used_at FROM password_resets WHERE token_hash = $1`,
+      [tokenHash],
+    );
+
+    if (resetResult.rows.length === 0) {
+      return res.status(400).json({ error: "El link de recuperación es inválido" });
+    }
+
+    const resetRow = resetResult.rows[0];
+
+    if (resetRow.used_at) {
+      return res.status(400).json({ error: "Este link ya fue utilizado" });
+    }
+
+    if (new Date(resetRow.expires_at) < new Date()) {
+      return res.status(400).json({ error: "El link de recuperación expiró" });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    await client.query("BEGIN");
+    await client.query("UPDATE users SET password_hash = $1 WHERE id = $2", [
+      passwordHash,
+      resetRow.user_id,
+    ]);
+    await client.query("UPDATE password_resets SET used_at = NOW() WHERE id = $1", [
+      resetRow.id,
+    ]);
+    await client.query("COMMIT");
+
+    res.status(200).json({ message: "Contraseña actualizada correctamente" });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    console.error(error);
+    res.status(500).json({ error: "No se pudo restablecer la contraseña" });
+  } finally {
+    client.release();
   }
 });
