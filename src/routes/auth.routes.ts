@@ -285,14 +285,14 @@ authRouter.post("/auth/forgot-password", async (req, res) => {
       sendEmail({
         to: email,
         subject: "Recuperar tu contraseña de Axora",
-        html: `<p>Hola ${user.first_name},</p><p>Hacé click en el siguiente link para restablecer tu contraseña. Este link expira en 30 minutos.</p><p><a href="${resetLink}">${resetLink}</a></p><p>Si vos no pediste esto, ignorá este mail.</p>`,
+        html: `<p>Hola ${user.first_name},</p><p>Haz clic en el siguiente enlace para restablecer tu contraseña. Este enlace expira en 30 minutos.</p><p><a href="${resetLink}">${resetLink}</a></p><p>Si no solicitaste este cambio, puedes ignorar este correo con tranquilidad.</p>`,
       }).catch((error) => {
         console.error("Error enviando email de recuperacion:", error);
       });
     }
 
     res.status(200).json({
-      message: "Si el email existe en nuestro sistema, vas a recibir un link para restablecer tu contraseña.",
+      message: "Si el correo electrónico existe en nuestro sistema, recibirás un enlace para restablecer tu contraseña.",
     });
   } catch (error) {
     console.error(error);
@@ -358,17 +358,17 @@ authRouter.post("/auth/reset-password", async (req, res) => {
     );
 
     if (resetResult.rows.length === 0) {
-      return res.status(400).json({ error: "El link de recuperación es inválido" });
+      return res.status(400).json({ error: "El enlace de recuperación no es válido" });
     }
 
     const resetRow = resetResult.rows[0];
 
     if (resetRow.used_at) {
-      return res.status(400).json({ error: "Este link ya fue utilizado" });
+      return res.status(400).json({ error: "Este enlace ya fue utilizado" });
     }
 
     if (new Date(resetRow.expires_at) < new Date()) {
-      return res.status(400).json({ error: "El link de recuperación expiró" });
+      return res.status(400).json({ error: "El enlace de recuperación ha expirado" });
     }
 
     const passwordHash = await bcrypt.hash(newPassword, 10);
