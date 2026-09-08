@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import crypto from "node:crypto";
 import { pool } from "../config/database.js";
 import { sendEmail } from "../services/email.js";
+import { buildPasswordResetEmail, buildWelcomeEmail } from "../services/emailTemplates.js";
 import {
   loginRateLimiter,
   recordFailedLogin,
@@ -119,6 +120,17 @@ authRouter.post("/auth/register", async (req, res) => {
     );
 
     res.status(201).json({ user, token });
+
+    try {
+      sendEmail({
+        to: user.email,
+        ...buildWelcomeEmail(user.first_name, process.env.FRONTEND_URL || "http://localhost:5173"),
+      }).catch((error) => {
+        console.error("Error enviando email de bienvenida:", error);
+      });
+    } catch (error) {
+      console.error("Error construyendo email de bienvenida:", error);
+    }
   } catch (error: any) {
     await client.query("ROLLBACK");
 
@@ -284,8 +296,7 @@ authRouter.post("/auth/forgot-password", async (req, res) => {
 
       sendEmail({
         to: email,
-        subject: "Recuperar tu contraseña de Axora",
-        html: `<p>Hola ${user.first_name},</p><p>Haz clic en el siguiente enlace para restablecer tu contraseña. Este enlace expira en 30 minutos.</p><p><a href="${resetLink}">${resetLink}</a></p><p>Si no solicitaste este cambio, puedes ignorar este correo con tranquilidad.</p>`,
+        ...buildPasswordResetEmail(user.first_name, resetLink),
       }).catch((error) => {
         console.error("Error enviando email de recuperacion:", error);
       });

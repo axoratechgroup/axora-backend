@@ -82,6 +82,12 @@ describe("Auth Routes", () => {
         email: "camila@axora.test",
       });
       expect(mockClientRelease).toHaveBeenCalled();
+      expect(mockSendEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: "camila@axora.test",
+          subject: "¡Bienvenido a Axora!",
+        })
+      );
     });
 
     it("retorna 400 si faltan campos requeridos", async () => {
