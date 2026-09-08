@@ -64,15 +64,14 @@ export function buildTransactionEmail(tx: TransactionEmailData, role: RecipientR
   rows.push(["Referencia", tx.id]);
 
   const activityUrl = new URL("/dashboard", base).href;
-  const logoUrl = new URL("/axora-email-logo.png", base).href;
   const htmlRows = rows.map(([label, value]) => `<tr><td style="padding:12px 8px;border-bottom:1px solid #eadfce;color:#62594f;vertical-align:top;">${escapeHtml(label)}</td><td style="padding:12px 8px;border-bottom:1px solid #eadfce;text-align:right;overflow-wrap:anywhere;">${escapeHtml(value)}</td></tr>`).join("");
   const footer = "AXORA · Tu dinero, sin fronteras. Proyecto educativo: operaciones con saldo simulado.";
   return {
     subject: `AXORA · ${title}`,
     text: `${title}\n\n${rows.map(([key, value]) => `${key}: ${value}`).join("\n")}\n\nVer mi actividad: ${activityUrl}\n\n${footer}`,
     html: `<!doctype html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0;padding:20px 8px;background:#f4ede3;color:#2a2623;font-family:Arial,Helvetica,sans-serif;">
-<table role="presentation" style="width:100%;max-width:600px;margin:0 auto;border-collapse:collapse;background:#fffaf3;"><tr><td style="padding:24px;background:#2a2623;">
-<img src="${escapeHtml(logoUrl)}" alt="Símbolo AXORA" width="40" height="40" style="vertical-align:middle;background:#fffaf3;padding:6px;"> <span style="color:#fffaf3;font-size:24px;letter-spacing:4px;vertical-align:middle;">AXORA</span></td></tr>
+<table role="presentation" style="width:100%;max-width:600px;margin:0 auto;border-collapse:collapse;background:#fffaf3;"><tr><td style="padding:26px 24px;background:#2a2623;text-align:center;">
+<span style="color:#f6c68b;font-size:26px;font-weight:bold;letter-spacing:6px;">AXORA</span></td></tr>
 <tr><td style="padding:24px;"><p style="color:#a95408;">MOVIMIENTO CONFIRMADO</p><h1 style="font-size:24px;">${escapeHtml(title)}</h1><p>Estos son los datos de tu operación en AXORA.</p>
 <table aria-label="Detalle del movimiento" style="width:100%;table-layout:fixed;border-collapse:collapse;background:#fff;">${htmlRows}</table>
 <p style="margin-top:28px;"><a href="${escapeHtml(activityUrl)}" style="display:inline-block;padding:14px 20px;background:#e8821e;color:#2a2623;text-decoration:none;font-weight:bold;">Ver mi actividad</a></p>

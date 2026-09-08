@@ -16,7 +16,7 @@ describe("plantilla transaccional AXORA", () => {
     expect(received.text).toContain("Remitente: @ana");
     expect(received.subject).toContain("Recibiste una transferencia");
     expect(sent.text).toContain("50,00 USD");
-    expect(sent.html).toContain('src="https://axora.example/axora-email-logo.png"');
+    expect(sent.html).toContain(">AXORA</span>");
     expect(sent.text).toContain("Cena del viaje");
   });
   it("escapa contenido de usuario en HTML manteniendo el texto plano", () => {
