@@ -3,6 +3,7 @@ import { pool } from "../config/database.js";
 import { authenticateToken } from "../middleware/auth.js";
 import type { Pool, PoolClient } from "pg";
 import { getExchangeRate } from "../services/exchangeRates.js";
+import { enqueueTransactionNotifications, dispatchTransactionNotifications } from "../services/notificationOutbox.js";
 
 export const walletRouter = Router();
 
@@ -259,9 +260,11 @@ walletRouter.post("/wallet/topup", authenticateToken, async (req, res) => {
       [walletId, currency, amount, balanceBefore, balanceAfter, "Carga de saldo"]
     );
 
+    await enqueueTransactionNotifications(client, transactionResult.rows[0].id);
     await client.query("COMMIT");
 
     res.status(200).json({ transaction: transactionResult.rows[0] });
+    void dispatchTransactionNotifications(transactionResult.rows[0].id);
   } catch (error) {
     await client.query("ROLLBACK");
     console.error(error);
@@ -425,9 +428,11 @@ walletRouter.post("/wallet/transfer", authenticateToken, async (req, res) => {
       ]
     );
 
+    await enqueueTransactionNotifications(client, transactionResult.rows[0].id);
     await client.query("COMMIT");
 
     res.status(200).json({ transaction: transactionResult.rows[0] });
+    void dispatchTransactionNotifications(transactionResult.rows[0].id);
   } catch (error) {
     await client.query("ROLLBACK");
     console.error(error);
@@ -565,9 +570,11 @@ walletRouter.post("/wallet/exchange", authenticateToken, async (req, res) => {
       ]
     );
 
+    await enqueueTransactionNotifications(client, transactionResult.rows[0].id);
     await client.query("COMMIT");
 
     res.status(200).json({ transaction: transactionResult.rows[0] });
+    void dispatchTransactionNotifications(transactionResult.rows[0].id);
   } catch (error) {
     await client.query("ROLLBACK");
     console.error(error);
