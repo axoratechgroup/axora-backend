@@ -92,6 +92,8 @@ describe("Admin Routes", () => {
           from_amount: "50",
           to_currency: "USD",
           to_amount: "50",
+          recipient_username: "camilop",
+          description: "Cena del viaje",
           created_at: new Date().toISOString(),
         },
       ];
@@ -103,6 +105,9 @@ describe("Admin Routes", () => {
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual(transactions);
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining("recipient.username AS recipient_username"),
+      );
     });
   });
 });

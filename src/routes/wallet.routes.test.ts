@@ -238,6 +238,38 @@ describe("Wallet Routes", () => {
       expect(response.body.error).toContain("No puedes transferir más de USD 2000");
     });
 
+    it("rechaza una nota que no es texto", async () => {
+      const response = await request(app)
+        .post("/wallet/transfer")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          recipient_username: "amigo",
+          currency: "USD",
+          amount: 50,
+          memo: { text: "Cena" },
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe("La nota debe ser texto");
+      expect(mockClientQuery).not.toHaveBeenCalled();
+    });
+
+    it("rechaza una nota de más de 255 caracteres", async () => {
+      const response = await request(app)
+        .post("/wallet/transfer")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          recipient_username: "amigo",
+          currency: "USD",
+          amount: 50,
+          memo: "a".repeat(256),
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe("La nota no puede superar los 255 caracteres");
+      expect(mockClientQuery).not.toHaveBeenCalled();
+    });
+
     it("rechaza si el destinatario no existe", async () => {
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
@@ -332,6 +364,7 @@ describe("Wallet Routes", () => {
           recipient_username: "amigo",
           currency: "USD",
           amount: 50,
+          memo: "  Cena del viaje  ",
         });
 
       expect(response.status).toBe(200);
@@ -340,6 +373,10 @@ describe("Wallet Routes", () => {
         type: "TRANSFER",
       });
       expect(mockClientQuery).toHaveBeenCalledWith("COMMIT");
+      const insertCall = mockClientQuery.mock.calls.find(([query]) =>
+        String(query).includes("INSERT INTO transactions"),
+      );
+      expect(insertCall?.[1]).toContain("Cena del viaje");
     });
   });
 

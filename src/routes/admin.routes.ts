@@ -74,10 +74,13 @@ adminRouter.get(
          t.to_amount,
          t.applied_exchange_rate,
          t.description,
+         recipient.username AS recipient_username,
          t.created_at
        FROM transactions t
        JOIN wallets w ON w.id = t.wallet_id
        JOIN users u ON u.id = w.user_id
+       LEFT JOIN wallets recipient_wallet ON recipient_wallet.id = t.destination_wallet_id
+       LEFT JOIN users recipient ON recipient.id = recipient_wallet.user_id
        ORDER BY t.created_at DESC`,
       );
 

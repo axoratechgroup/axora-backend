@@ -302,7 +302,7 @@ walletRouter.post("/wallet/topup", authenticateToken, async (req, res) => {
  *         description: Destinatario no encontrado
  */
 walletRouter.post("/wallet/transfer", authenticateToken, async (req, res) => {
-  const { recipient_username, currency } = req.body;
+  const { recipient_username, currency, memo } = req.body;
   const amount = Number(req.body.amount);
 
   if (!recipient_username || !currency || !req.body.amount) {
@@ -311,6 +311,15 @@ walletRouter.post("/wallet/transfer", authenticateToken, async (req, res) => {
 
   if (!(amount > 0)) {
     return res.status(400).json({ error: "El monto debe ser mayor a 0" });
+  }
+
+  if (memo !== undefined && typeof memo !== "string") {
+    return res.status(400).json({ error: "La nota debe ser texto" });
+  }
+
+  const normalizedMemo = memo?.trim() || null;
+  if (normalizedMemo && normalizedMemo.length > 255) {
+    return res.status(400).json({ error: "La nota no puede superar los 255 caracteres" });
   }
 
   const amountInUsd = currency === "USD" ? amount : amount * (await getExchangeRate(currency, "USD"));
@@ -412,7 +421,7 @@ walletRouter.post("/wallet/transfer", authenticateToken, async (req, res) => {
         recipientBalanceBefore,
         recipientBalanceAfter,
         recipientWalletId,
-        `Transferencia a ${recipient_username}`,
+        normalizedMemo,
       ]
     );
 
