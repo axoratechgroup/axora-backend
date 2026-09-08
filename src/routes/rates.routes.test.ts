@@ -3,12 +3,14 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../services/exchangeRates.js", () => ({
+  getExchangeRate: vi.fn(),
   getExchangeRateHistory: vi.fn(),
 }));
 
-import { getExchangeRateHistory } from "../services/exchangeRates.js";
+import { getExchangeRate, getExchangeRateHistory } from "../services/exchangeRates.js";
 import { ratesRouter } from "./rates.routes.js";
 
+const getExchangeRateMock = vi.mocked(getExchangeRate);
 const getExchangeRateHistoryMock = vi.mocked(getExchangeRateHistory);
 const app = express();
 app.use(ratesRouter);
@@ -62,5 +64,42 @@ describe("GET /rates/history", () => {
 
     expect(response.status).toBe(502);
     expect(response.body.error).toBe("No se pudo obtener el histórico de cotizaciones");
+  });
+});
+
+describe("GET /rates/quote", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns current live exchange rate for a currency pair", async () => {
+    getExchangeRateMock.mockResolvedValue(0.92);
+
+    const response = await request(app).get("/rates/quote?from=usd&to=eur");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      from_currency: "USD",
+      to_currency: "EUR",
+      rate: 0.92,
+    });
+    expect(getExchangeRateMock).toHaveBeenCalledWith("USD", "EUR");
+  });
+
+  it("rejects invalid currency codes", async () => {
+    const response = await request(app).get("/rates/quote?from=US&to=EUR");
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe("from y to deben ser códigos ISO de tres letras");
+    expect(getExchangeRateMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 502 when rate fetching fails", async () => {
+    getExchangeRateMock.mockRejectedValue(new Error("External API failure"));
+
+    const response = await request(app).get("/rates/quote?from=USD&to=EUR");
+
+    expect(response.status).toBe(502);
+    expect(response.body.error).toBe("No se pudo obtener la cotización de cambio");
   });
 });

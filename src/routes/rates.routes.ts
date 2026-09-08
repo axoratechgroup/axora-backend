@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getExchangeRateHistory } from "../services/exchangeRates.js";
+import { getExchangeRate, getExchangeRateHistory } from "../services/exchangeRates.js";
 
 export const ratesRouter = Router();
 
@@ -83,5 +83,53 @@ ratesRouter.get("/rates/history", async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(502).json({ error: "No se pudo obtener el histórico de cotizaciones" });
+  }
+});
+
+/**
+ * @openapi
+ * /rates/quote:
+ *   get:
+ *     summary: Devuelve la tasa de cambio actual entre dos monedas para cotizaciones en vivo
+ *     tags: [Rates]
+ *     parameters:
+ *       - in: query
+ *         name: from
+ *         required: true
+ *         schema:
+ *           type: string
+ *           example: USD
+ *       - in: query
+ *         name: to
+ *         required: true
+ *         schema:
+ *           type: string
+ *           example: EUR
+ *     responses:
+ *       200:
+ *         description: Tasa de cambio actual
+ *       400:
+ *         description: Parámetros inválidos
+ *       502:
+ *         description: No fue posible consultar la cotización
+ */
+ratesRouter.get("/rates/quote", async (req, res) => {
+  const from = typeof req.query.from === "string" ? req.query.from.toUpperCase() : "";
+  const to = typeof req.query.to === "string" ? req.query.to.toUpperCase() : "";
+
+  if (!isCurrencyCode(from) || !isCurrencyCode(to)) {
+    return res.status(400).json({ error: "from y to deben ser códigos ISO de tres letras" });
+  }
+
+  try {
+    const rate = await getExchangeRate(from, to);
+    res.json({
+      from_currency: from,
+      to_currency: to,
+      rate,
+    });
+  } catch (error) {
+    console.error("Error al obtener cotización en /rates/quote:", error);
+    res.status(502).json({ error: "No se pudo obtener la cotización de cambio" });
   }
 });
