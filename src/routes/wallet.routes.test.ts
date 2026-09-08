@@ -23,6 +23,11 @@ vi.mock("../services/exchangeRates.js", () => ({
 }));
 
 import { getExchangeRate } from "../services/exchangeRates.js";
+vi.mock("../services/notificationOutbox.js", () => ({
+  enqueueTransactionNotifications: vi.fn().mockResolvedValue(undefined),
+  dispatchTransactionNotifications: vi.fn().mockResolvedValue(undefined),
+}));
+import { enqueueTransactionNotifications, dispatchTransactionNotifications } from "../services/notificationOutbox.js";
 import { walletRouter } from "./wallet.routes.js";
 
 const getExchangeRateMock = vi.mocked(getExchangeRate);
@@ -39,6 +44,7 @@ describe("Wallet Routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.JWT_SECRET = JWT_SECRET;
+    vi.mocked(enqueueTransactionNotifications).mockResolvedValue(undefined);
   });
 
   describe("GET /wallet", () => {
@@ -238,10 +244,33 @@ describe("Wallet Routes", () => {
         type: "TOP_UP",
       });
       expect(mockClientQuery).toHaveBeenCalledWith("COMMIT");
+      expect(enqueueTransactionNotifications).toHaveBeenCalledWith(expect.anything(), "tx-topup-1");
+      expect(dispatchTransactionNotifications).toHaveBeenCalledWith("tx-topup-1");
     });
   });
 
   describe("POST /wallet/transfer", () => {
+    it("revierte el movimiento si no se puede persistir su notificación", async () => {
+      const log = vi.spyOn(console, "error").mockImplementation(() => {});
+      vi.mocked(enqueueTransactionNotifications).mockRejectedValueOnce(new Error("Outbox unavailable"));
+      mockClientQuery.mockResolvedValueOnce({})
+        .mockResolvedValueOnce({ rows: [{ id: "wallet-uuid-1" }] })
+        .mockResolvedValueOnce({ rows: [{ user_id: "user-uuid-2", wallet_id: "wallet-uuid-2" }] })
+        .mockResolvedValueOnce({ rows: [
+          { wallet_id: "wallet-uuid-1", amount: "150" },
+          { wallet_id: "wallet-uuid-2", amount: "20" },
+        ] })
+        .mockResolvedValueOnce({}).mockResolvedValueOnce({})
+        .mockResolvedValueOnce({ rows: [{ id: "tx-rollback" }] }).mockResolvedValueOnce({});
+      const response = await request(app).post("/wallet/transfer")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ recipient_username: "amigo", currency: "USD", amount: 50 });
+      expect(response.status).toBe(500);
+      expect(mockClientQuery).toHaveBeenCalledWith("ROLLBACK");
+      expect(mockClientQuery).not.toHaveBeenCalledWith("COMMIT");
+      expect(dispatchTransactionNotifications).not.toHaveBeenCalled();
+      log.mockRestore();
+    });
     it("rechaza si el monto excede el límite de transferencia de USD 10000", async () => {
       const response = await request(app)
         .post("/wallet/transfer")
@@ -353,6 +382,8 @@ describe("Wallet Routes", () => {
 
       expect(response.status).toBe(400);
       expect(response.body.error).toBe("Saldo insuficiente");
+      expect(enqueueTransactionNotifications).not.toHaveBeenCalled();
+      expect(dispatchTransactionNotifications).not.toHaveBeenCalled();
     });
 
     it("realiza la transferencia atómica exitosamente", async () => {
@@ -390,6 +421,13 @@ describe("Wallet Routes", () => {
         id: "tx-transfer-1",
         type: "TRANSFER",
       });
+      expect(enqueueTransactionNotifications).toHaveBeenCalledWith(expect.anything(), "tx-transfer-1");
+      expect(dispatchTransactionNotifications).toHaveBeenCalledWith("tx-transfer-1");
+      const enqueueOrder = vi.mocked(enqueueTransactionNotifications).mock.invocationCallOrder[0];
+      const commitIndex = mockClientQuery.mock.calls.findIndex(([sql]) => sql === "COMMIT");
+      const commitOrder = mockClientQuery.mock.invocationCallOrder[commitIndex];
+      expect(enqueueOrder).toBeLessThan(commitOrder);
+      expect(vi.mocked(dispatchTransactionNotifications).mock.invocationCallOrder[0]).toBeGreaterThan(commitOrder);
       expect(mockClientQuery).toHaveBeenCalledWith("COMMIT");
       const insertCall = mockClientQuery.mock.calls.find(([query]) =>
         String(query).includes("INSERT INTO transactions"),
@@ -448,6 +486,8 @@ describe("Wallet Routes", () => {
         id: "tx-swap-1",
         type: "SWAP",
       });
+      expect(enqueueTransactionNotifications).toHaveBeenCalledWith(expect.anything(), "tx-swap-1");
+      expect(dispatchTransactionNotifications).toHaveBeenCalledWith("tx-swap-1");
       expect(mockClientQuery).toHaveBeenCalledWith("COMMIT");
     });
   });

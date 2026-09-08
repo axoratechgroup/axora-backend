@@ -183,6 +183,7 @@ CREATE TABLE notification_outbox (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     transaction_id  UUID NOT NULL REFERENCES transactions(id),
     recipient_email VARCHAR(255) NOT NULL,
+    recipient_role  VARCHAR(20) NOT NULL CHECK (recipient_role IN ('owner', 'sender', 'recipient')),
     type            VARCHAR(50) NOT NULL DEFAULT 'TRANSACTION_CONFIRMATION'
                         CHECK (type IN ('TRANSACTION_CONFIRMATION')),
     status          VARCHAR(20) NOT NULL DEFAULT 'PENDING'
@@ -192,7 +193,7 @@ CREATE TABLE notification_outbox (
     sent_at         TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(transaction_id, type)
+    UNIQUE(transaction_id, type, recipient_role)
 );
 
 -- ============================================
@@ -214,7 +215,6 @@ CREATE TABLE password_resets (
 
 CREATE INDEX idx_transactions_wallet_id             ON transactions(wallet_id);
 CREATE INDEX idx_transactions_destination_wallet_id ON transactions(destination_wallet_id);
-CREATE INDEX idx_notification_outbox_status         ON notification_outbox(status);
 CREATE INDEX idx_notification_outbox_status         ON notification_outbox(status);
 CREATE INDEX idx_password_resets_token_hash         ON password_resets(token_hash);
 
