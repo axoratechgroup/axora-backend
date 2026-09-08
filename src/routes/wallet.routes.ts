@@ -17,8 +17,8 @@ async function getWalletByUserId(userId: string, executor: Pool | PoolClient = p
 }
 
 
-const MAX_WALLET_TOTAL_USD = 10000;
-const MAX_TRANSFER_USD = 2000;
+const MAX_TOPUP_USD = 10000;
+const MAX_TRANSFER_USD = 10000;
 const SWAP_FEE_PERCENTAGE = 0.003; // 0.3% de comisión en cada cambio de moneda
 const FALLBACK_RATES_TO_USD: Record<string, number> = {
   USD: 1,
@@ -232,12 +232,11 @@ walletRouter.post("/wallet/topup", authenticateToken, async (req, res) => {
     }
 
     const amountInUsd = currency === "USD" ? amount : amount * (await getExchangeRate(currency, "USD"));
-    const currentTotalUsd = await getWalletTotalInUsd(walletId, client);
 
-    if (currentTotalUsd + amountInUsd > MAX_WALLET_TOTAL_USD) {
+    if (amountInUsd > MAX_TOPUP_USD) {
       await client.query("ROLLBACK");
       return res.status(400).json({
-        error: `No puedes cargar ese monto: superarías el límite de USD ${MAX_WALLET_TOTAL_USD} en tu cuenta (actualmente tienes el equivalente a USD ${currentTotalUsd.toFixed(2)})`,
+        error: `No puedes cargar más de USD ${MAX_TOPUP_USD} por operación (esto equivale a USD ${amountInUsd.toFixed(2)})`,
       });
     }
 
