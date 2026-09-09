@@ -184,21 +184,25 @@ describe("Wallet Routes", () => {
       expect(response.body.error).toBe("El monto debe ser mayor a 0");
     });
 
-    it("rechaza si el monto de la carga supera el límite de USD 10000 por operación", async () => {
+    it("permite cargar montos superiores a USD 10000 sin límite (ahorro libre)", async () => {
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
         .mockResolvedValueOnce({ rows: [{ id: "wallet-uuid-1" }] }) // getWalletByUserId
-        .mockResolvedValueOnce({ rows: [{ amount: "9500" }] }) // balance select
-        .mockResolvedValueOnce({}); // ROLLBACK
+        .mockResolvedValueOnce({ rows: [{ amount: "5000" }] }) // balance select
+        .mockResolvedValueOnce({}) // UPDATE balances
+        .mockResolvedValueOnce({
+          rows: [{ id: "tx-topup-unlimited", type: "TOP_UP", to_amount: "50000" }],
+        }) // INSERT INTO transactions
+        .mockResolvedValueOnce({}); // COMMIT
 
       const response = await request(app)
         .post("/wallet/topup")
         .set("Authorization", `Bearer ${token}`)
-        .send({ currency: "USD", amount: 10500 });
+        .send({ currency: "USD", amount: 50000 });
 
-      expect(response.status).toBe(400);
-      expect(response.body.error).toContain("No puedes cargar más de USD 10000");
-      expect(mockClientQuery).toHaveBeenCalledWith("ROLLBACK");
+      expect(response.status).toBe(200);
+      expect(response.body.transaction).toBeDefined();
+      expect(mockClientQuery).toHaveBeenCalledWith("COMMIT");
     });
 
     it("permite cargar aunque el patrimonio total ya sea alto (no hay tope de saldo total)", async () => {

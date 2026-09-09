@@ -318,16 +318,16 @@ describe("Auth Routes", () => {
       expect(response.body.error).toBe("Falta el email");
     });
 
-    it("retorna 200 con mensaje genérico si el usuario no existe en el sistema", async () => {
+    it("retorna 404 si el usuario no existe en el sistema", async () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
 
       const response = await request(app)
         .post("/auth/forgot-password")
         .send({ email: "inexistente@axora.test" });
 
-      expect(response.status).toBe(200);
-      expect(response.body.message).toBe(
-        "Si el correo electrónico existe en nuestro sistema, recibirás un enlace para restablecer tu contraseña."
+      expect(response.status).toBe(404);
+      expect(response.body.error).toBe(
+        "El correo electrónico no se encuentra registrado en nuestro sistema."
       );
       expect(mockSendEmail).not.toHaveBeenCalled();
     });
@@ -345,7 +345,7 @@ describe("Auth Routes", () => {
 
       expect(response.status).toBe(200);
       expect(response.body.message).toContain(
-        "recibirás un enlace para restablecer tu contraseña"
+        "Se ha enviado un enlace para restablecer tu contraseña"
       );
       expect(mockSendEmail).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -353,6 +353,46 @@ describe("Auth Routes", () => {
           subject: "Recuperar tu contraseña de Axora",
         })
       );
+    });
+  });
+
+  describe("POST /auth/check-email", () => {
+    it("retorna 400 si falta el email", async () => {
+      const response = await request(app)
+        .post("/auth/check-email")
+        .send({});
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe("Falta el email");
+    });
+
+    it("retorna 404 si el email no está en la base de datos", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+
+      const response = await request(app)
+        .post("/auth/check-email")
+        .send({ email: "desconocido@axora.test" });
+
+      expect(response.status).toBe(404);
+      expect(response.body.exists).toBe(false);
+      expect(response.body.error).toBe(
+        "El correo electrónico no se encuentra registrado en nuestro sistema."
+      );
+    });
+
+    it("retorna 200 si el email existe en la base de datos", async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [{ id: "user-456", first_name: "Ana" }],
+      });
+
+      const response = await request(app)
+        .post("/auth/check-email")
+        .send({ email: "ana@axora.test" });
+
+      expect(response.status).toBe(200);
+      expect(response.body.exists).toBe(true);
+      expect(response.body.first_name).toBe("Ana");
+      expect(response.body.message).toBe("Correo encontrado en el sistema.");
     });
   });
 

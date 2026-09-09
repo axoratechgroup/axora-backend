@@ -270,6 +270,37 @@ authRouter.post("/auth/login", loginRateLimiter, async (req, res) => {
  *               $ref: '#/components/schemas/Error'
  */
 
+authRouter.post("/auth/check-email", async (req, res) => {
+  const email = req.body.email?.trim().toLowerCase();
+
+  if (!email) {
+    return res.status(400).json({ error: "Falta el email" });
+  }
+
+  try {
+    const userResult = await pool.query(
+      "SELECT id, first_name FROM users WHERE email = $1",
+      [email],
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({
+        exists: false,
+        error: "El correo electrónico no se encuentra registrado en nuestro sistema.",
+      });
+    }
+
+    return res.status(200).json({
+      exists: true,
+      first_name: userResult.rows[0].first_name,
+      message: "Correo encontrado en el sistema.",
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "Error al verificar el correo electrónico" });
+  }
+});
+
 authRouter.post("/auth/forgot-password", forgotPasswordRateLimiter, async (req, res) => {
   const email = req.body.email?.trim().toLowerCase();
 
@@ -283,29 +314,33 @@ authRouter.post("/auth/forgot-password", forgotPasswordRateLimiter, async (req, 
       [email],
     );
 
-    if (userResult.rows.length > 0) {
-      const user = userResult.rows[0];
-      const rawToken = crypto.randomBytes(32).toString("hex");
-      const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
-      const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
-
-      await pool.query(
-        `INSERT INTO password_resets (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`,
-        [user.id, tokenHash, expiresAt],
-      );
-
-      const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${rawToken}`;
-
-      sendEmail({
-        to: email,
-        ...buildPasswordResetEmail(user.first_name, resetLink),
-      }).catch((error) => {
-        console.error("Error enviando email de recuperacion:", error);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({
+        error: "El correo electrónico no se encuentra registrado en nuestro sistema.",
       });
     }
 
+    const user = userResult.rows[0];
+    const rawToken = crypto.randomBytes(32).toString("hex");
+    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+
+    await pool.query(
+      `INSERT INTO password_resets (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`,
+      [user.id, tokenHash, expiresAt],
+    );
+
+    const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${rawToken}`;
+
+    sendEmail({
+      to: email,
+      ...buildPasswordResetEmail(user.first_name, resetLink),
+    }).catch((error) => {
+      console.error("Error enviando email de recuperacion:", error);
+    });
+
     res.status(200).json({
-      message: "Si el correo electrónico existe en nuestro sistema, recibirás un enlace para restablecer tu contraseña.",
+      message: "Se ha enviado un enlace para restablecer tu contraseña a tu correo electrónico.",
     });
   } catch (error) {
     console.error(error);
