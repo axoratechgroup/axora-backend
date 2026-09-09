@@ -266,6 +266,7 @@ chatRouter.post("/chat/confirm", authenticateToken, async (req, res) => {
         Authorization: req.headers.authorization ?? "",
       },
       body: JSON.stringify(params),
+      signal: AbortSignal.timeout(10000),
     });
 
     const data = await response.json().catch(() => ({}));

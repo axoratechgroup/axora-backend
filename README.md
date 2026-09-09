@@ -565,7 +565,7 @@ Lista global de todas las transacciones realizadas en el sistema con los datos d
 
 ## 🧪 Pruebas Automatizadas
 
-El proyecto utiliza **Vitest** y **Supertest** para pruebas unitarias y de integración de rutas, middlewares y servicios externos simulados (**14 suites de pruebas, 130 pruebas en total — 100% pasando**):
+El proyecto utiliza **Vitest** y **Supertest** para pruebas unitarias y de integración de rutas, middlewares y servicios externos simulados (**14 suites de pruebas, 138 pruebas en total — 100% pasando**):
 
 ```bash
 # Ejecutar todas las pruebas una sola vez
