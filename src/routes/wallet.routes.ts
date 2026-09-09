@@ -100,6 +100,7 @@ walletRouter.get("/wallet", authenticateToken, async (req, res) => {
 
     const totalInUsd = await getWalletTotalInUsd(wallet.id);
 
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
     res.json({
       wallet_id: wallet.id,
       created_at: wallet.created_at,
@@ -170,6 +171,7 @@ walletRouter.get("/wallet/transactions", authenticateToken, async (req, res) => 
       };
     });
 
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
     res.json({ transactions });
   } catch (error) {
     console.error(error);
