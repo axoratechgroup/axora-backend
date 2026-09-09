@@ -31,6 +31,7 @@ describe("getExchangeRateHistory", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.frankfurter.dev/v2/rates?base=USD&quotes=MXN&from=2026-08-01&to=2026-08-03",
+      expect.objectContaining({ signal: expect.anything() }),
     );
     expect(points).toEqual([
       { date: "2026-08-01", rate: 18.4 },
