@@ -301,6 +301,140 @@ authRouter.post("/auth/check-email", async (req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /auth/check-username:
+ *   post:
+ *     summary: Comprueba si un nombre de usuario ya está registrado
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [username]
+ *             properties:
+ *               username:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Estado de disponibilidad del nombre de usuario
+ *       400:
+ *         description: Falta el nombre de usuario o formato inválido
+ */
+authRouter.post("/auth/check-username", async (req, res) => {
+  const username = typeof req.body.username === "string" ? req.body.username.trim().toLowerCase() : "";
+
+  if (!username) {
+    return res.status(400).json({ error: "Falta el nombre de usuario" });
+  }
+
+  if (username.length < 3) {
+    return res.status(400).json({
+      available: false,
+      error: "El nombre de usuario debe tener al menos 3 caracteres.",
+    });
+  }
+
+  if (!/^[a-zA-Z0-9_.-]+$/.test(username)) {
+    return res.status(400).json({
+      available: false,
+      error: "El nombre de usuario solo puede contener letras, números, puntos y guiones.",
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      "SELECT id FROM users WHERE LOWER(username) = $1",
+      [username],
+    );
+
+    const available = result.rows.length === 0;
+    return res.status(200).json({
+      available,
+      message: available
+        ? "Nombre de usuario disponible."
+        : "El nombre de usuario ya está en uso.",
+    });
+  } catch (error) {
+    console.error("Error al verificar el nombre de usuario:", error);
+    return res.status(500).json({ error: "Error al verificar el nombre de usuario" });
+  }
+});
+
+/**
+ * @openapi
+ * /auth/check-availability:
+ *   post:
+ *     summary: Comprueba la disponibilidad de username y/o email en tiempo real
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               username:
+ *                 type: string
+ *               email:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Disponibilidad de cada campo consultado
+ *       400:
+ *         description: No se enviaron campos para verificar
+ */
+authRouter.post("/auth/check-availability", async (req, res) => {
+  const username = typeof req.body.username === "string" ? req.body.username.trim().toLowerCase() : undefined;
+  const email = typeof req.body.email === "string" ? req.body.email.trim().toLowerCase() : undefined;
+
+  if (!username && !email) {
+    return res.status(400).json({ error: "Debes proporcionar un usuario o correo para verificar" });
+  }
+
+  const response: {
+    username?: { available: boolean; message: string };
+    email?: { available: boolean; message: string };
+  } = {};
+
+  try {
+    if (username) {
+      if (username.length < 3) {
+        response.username = { available: false, message: "El usuario debe tener al menos 3 caracteres." };
+      } else if (!/^[a-zA-Z0-9_.-]+$/.test(username)) {
+        response.username = { available: false, message: "El usuario contiene caracteres no permitidos." };
+      } else {
+        const userCheck = await pool.query("SELECT id FROM users WHERE LOWER(username) = $1", [username]);
+        const available = userCheck.rows.length === 0;
+        response.username = {
+          available,
+          message: available ? "Nombre de usuario disponible." : "El nombre de usuario ya está en uso.",
+        };
+      }
+    }
+
+    if (email) {
+      if (!EMAIL_REGEX.test(email)) {
+        response.email = { available: false, message: "Ingresa un correo electrónico válido." };
+      } else {
+        const emailCheck = await pool.query("SELECT id FROM users WHERE LOWER(email) = $1", [email]);
+        const available = emailCheck.rows.length === 0;
+        response.email = {
+          available,
+          message: available ? "Correo disponible." : "El correo ya está registrado en nuestro sistema.",
+        };
+      }
+    }
+
+    return res.status(200).json(response);
+  } catch (error) {
+    console.error("Error al verificar disponibilidad:", error);
+    return res.status(500).json({ error: "Error al verificar disponibilidad" });
+  }
+});
+
 authRouter.post("/auth/forgot-password", forgotPasswordRateLimiter, async (req, res) => {
   const email = req.body.email?.trim().toLowerCase();
 

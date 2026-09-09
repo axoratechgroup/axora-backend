@@ -498,4 +498,63 @@ describe("Auth Routes", () => {
       expect(mockClientRelease).toHaveBeenCalled();
     });
   });
+
+  describe("POST /auth/check-username", () => {
+    it("retorna 400 si falta el username", async () => {
+      const res = await request(app).post("/auth/check-username").send({});
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe("Falta el nombre de usuario");
+    });
+
+    it("retorna 400 si el username tiene menos de 3 caracteres", async () => {
+      const res = await request(app).post("/auth/check-username").send({ username: "ab" });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/al menos 3 caracteres/i);
+    });
+
+    it("retorna available: true si el usuario no existe", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+      const res = await request(app).post("/auth/check-username").send({ username: "nuevousuario" });
+      expect(res.status).toBe(200);
+      expect(res.body.available).toBe(true);
+      expect(res.body.message).toMatch(/disponible/i);
+    });
+
+    it("retorna available: false si el usuario ya existe", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: "user-123" }] });
+      const res = await request(app).post("/auth/check-username").send({ username: "existente" });
+      expect(res.status).toBe(200);
+      expect(res.body.available).toBe(false);
+      expect(res.body.message).toMatch(/ya está en uso/i);
+    });
+  });
+
+  describe("POST /auth/check-availability", () => {
+    it("retorna 400 si no se envia ni username ni email", async () => {
+      const res = await request(app).post("/auth/check-availability").send({});
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/proporcionar un usuario o correo/i);
+    });
+
+    it("verifica disponibilidad combinada de username y email correctamente", async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] }) // username libre
+        .mockResolvedValueOnce({ rows: [{ id: "user-999" }] }); // email en uso
+
+      const res = await request(app).post("/auth/check-availability").send({
+        username: "superstar",
+        email: "yaexiste@axora.com",
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.body.username).toEqual({
+        available: true,
+        message: "Nombre de usuario disponible.",
+      });
+      expect(res.body.email).toEqual({
+        available: false,
+        message: "El correo ya está registrado en nuestro sistema.",
+      });
+    });
+  });
 });
