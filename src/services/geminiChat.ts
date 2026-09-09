@@ -90,6 +90,7 @@ async function callGeminiOnce(
     return fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(15000),
         body: JSON.stringify({
             contents,
             tools: TOOLS,

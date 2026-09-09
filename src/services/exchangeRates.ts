@@ -1,6 +1,7 @@
 import { pool } from "../config/database.js";
 
 const CACHE_TTL_MINUTES = 60;
+const EXTERNAL_FETCH_TIMEOUT_MS = 5000;
 
 export interface ExchangeRateHistoryPoint {
   date: string;
@@ -38,7 +39,9 @@ export async function getExchangeRate(
     return Number(cached.rows[0].rate);
   }
 
-  const response = await fetch(`https://open.er-api.com/v6/latest/${fromCurrency}`);
+  const response = await fetch(`https://open.er-api.com/v6/latest/${fromCurrency}`, {
+    signal: AbortSignal.timeout(EXTERNAL_FETCH_TIMEOUT_MS),
+  });
   if (!response.ok) {
     throw new Error("No se pudo obtener la cotización externa");
   }
@@ -56,13 +59,13 @@ export async function getExchangeRate(
 
   await pool.query(
     `INSERT INTO exchange_rates (from_currency, to_currency, rate, source, expires_at)
-     VALUES ($1, $2, $3, 'open.er-api.com', NOW() + INTERVAL '60 minutes')
+     VALUES ($1, $2, $3, 'open.er-api.com', NOW() + ($4 || ' minutes')::interval)
      ON CONFLICT (from_currency, to_currency)
      DO UPDATE SET rate = EXCLUDED.rate,
                    source = EXCLUDED.source,
                    fetched_at = NOW(),
                    expires_at = EXCLUDED.expires_at`,
-    [fromCurrency, toCurrency, rate],
+    [fromCurrency, toCurrency, rate, CACHE_TTL_MINUTES],
   );
 
   return rate;
@@ -90,7 +93,9 @@ export async function getExchangeRateHistory(
     to: toDate,
   });
 
-  const response = await fetch(`https://api.frankfurter.dev/v2/rates?${query}`);
+  const response = await fetch(`https://api.frankfurter.dev/v2/rates?${query}`, {
+    signal: AbortSignal.timeout(EXTERNAL_FETCH_TIMEOUT_MS),
+  });
 
   if (!response.ok) {
     throw new Error("No se pudo obtener el histórico de cotizaciones");

@@ -9,6 +9,8 @@ import {
   loginRateLimiter,
   recordFailedLogin,
   clearLoginAttempts,
+  registerRateLimiter,
+  forgotPasswordRateLimiter,
 } from "../middleware/rateLimiter.js";
 
 export const authRouter = Router();
@@ -53,7 +55,7 @@ export const authRouter = Router();
  */
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-authRouter.post("/auth/register", async (req, res) => {
+authRouter.post("/auth/register", registerRateLimiter, async (req, res) => {
   const client = await pool.connect();
 
   try {
@@ -268,7 +270,7 @@ authRouter.post("/auth/login", loginRateLimiter, async (req, res) => {
  *               $ref: '#/components/schemas/Error'
  */
 
-authRouter.post("/auth/forgot-password", async (req, res) => {
+authRouter.post("/auth/forgot-password", forgotPasswordRateLimiter, async (req, res) => {
   const email = req.body.email?.trim().toLowerCase();
 
   if (!email) {
