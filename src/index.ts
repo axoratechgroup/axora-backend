@@ -38,6 +38,18 @@ app.use(adminRouter);
 app.use(chatRouter);
 app.use(ratesRouter);
 
+// Manejador global de errores para asegurar respuestas JSON consistentes con cabeceras CORS
+app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (res.headersSent) {
+    return next(err);
+  }
+  console.error("Unhandled API error:", err);
+  const status = typeof err?.status === "number" ? err.status : 500;
+  res.status(status).json({
+    error: err?.message || "Error interno del servidor.",
+  });
+});
+
 async function bootstrapAdmin() {
   try {
     const res = await pool.query(
