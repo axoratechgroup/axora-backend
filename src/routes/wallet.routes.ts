@@ -18,7 +18,6 @@ async function getWalletByUserId(userId: string, executor: Pool | PoolClient = p
 }
 
 
-const MAX_TOPUP_USD = 10000;
 const MAX_TRANSFER_USD = 10000;
 const SWAP_FEE_PERCENTAGE = 0.003; // 0.3% de comisión en cada cambio de moneda
 const FALLBACK_RATES_TO_USD: Record<string, number> = {
@@ -236,15 +235,6 @@ walletRouter.post("/wallet/topup", authenticateToken, async (req, res) => {
     if (balanceResult.rows.length === 0) {
       await client.query("ROLLBACK");
       return res.status(400).json({ error: `Moneda no soportada: ${currency}` });
-    }
-
-    const amountInUsd = currency === "USD" ? amount : amount * (await getExchangeRate(currency, "USD"));
-
-    if (amountInUsd > MAX_TOPUP_USD) {
-      await client.query("ROLLBACK");
-      return res.status(400).json({
-        error: `No puedes cargar más de USD ${MAX_TOPUP_USD} por operación (esto equivale a USD ${amountInUsd.toFixed(2)})`,
-      });
     }
 
     const balanceBefore = Number(balanceResult.rows[0].amount);
