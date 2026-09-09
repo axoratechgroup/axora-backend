@@ -1,5 +1,7 @@
-const GEMINI_MODEL = "gemini-3.5-flash-lite"; // modelo liviano, con cuota gratuita mucho más generosa
-const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+function getGeminiApiUrl(): string {
+    return `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+}
 
 const SYSTEM_INSTRUCTION = `Eres el asistente virtual oficial de AXORA, una plataforma y billetera digital multi-moneda para operaciones financieras globales y viajes.
 
@@ -98,7 +100,7 @@ async function callGeminiOnce(
     apiKey: string,
     contents: { role: string; parts: { text: string }[] }[],
 ): Promise<Response> {
-    return fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+    return fetch(`${getGeminiApiUrl()}?key=${apiKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: AbortSignal.timeout(15000),
