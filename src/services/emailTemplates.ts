@@ -49,7 +49,7 @@ ${note}
 export function buildPasswordResetEmail(firstName: string, resetLink: string) {
   return {
     subject: "Recuperar tu contraseña de Axora",
-    text: `Hola ${firstName},\n\nRecibimos una solicitud para restablecer tu contraseña. Este enlace expira en 30 minutos:\n${resetLink}\n\nSi no solicitaste este cambio, podés ignorar este correo con tranquilidad.\n\n${FOOTER}`,
+    text: `Hola ${firstName},\n\nRecibimos una solicitud para restablecer tu contraseña. Este enlace expira en 30 minutos:\n${resetLink}\n\nSi no solicitaste este cambio, puedes ignorar este correo con tranquilidad.\n\n${FOOTER}`,
     html: wrapEmailLayout({
       badge: "RECUPERAR CONTRASEÑA",
       title: `Hola, ${firstName}`,
@@ -57,7 +57,7 @@ export function buildPasswordResetEmail(firstName: string, resetLink: string) {
       bodyHtml: `<p style="margin:0;padding:14px 16px;background:#f4ede3;border-radius:8px;font-size:13px;">Este enlace expira en <strong>30 minutos</strong> por tu seguridad.</p>`,
       ctaLabel: "Restablecer contraseña",
       ctaUrl: resetLink,
-      disclaimer: "Si no solicitaste este cambio, podés ignorar este correo con tranquilidad.",
+      disclaimer: "Si no solicitaste este cambio, puedes ignorar este correo con tranquilidad.",
     }),
   };
 }
@@ -66,12 +66,12 @@ export function buildWelcomeEmail(firstName: string, frontendUrl: string) {
   const dashboardUrl = new URL("/dashboard", frontendUrl).href;
   return {
     subject: "¡Bienvenido a Axora!",
-    text: `Hola ${firstName},\n\n¡Tu cuenta en Axora fue creada con éxito! Ya podés cargar saldo, transferir y cambiar entre monedas (USD, EUR, ARS, COP, MXN, BRL) desde un solo lugar.\n\nEntrá a tu cuenta: ${dashboardUrl}\n\n${FOOTER}`,
+    text: `Hola ${firstName},\n\n¡Tu cuenta en Axora fue creada con éxito! Ya puedes cargar saldo, transferir y cambiar entre monedas (USD, EUR, ARS, COP, MXN, BRL) desde un solo lugar.\n\nEntra a tu cuenta: ${dashboardUrl}\n\n${FOOTER}`,
     html: wrapEmailLayout({
       badge: "CUENTA CREADA",
       title: `¡Bienvenido, ${firstName}!`,
       intro: "Tu cuenta en Axora fue creada con éxito.",
-      bodyHtml: `<p style="margin:0;padding:14px 16px;background:#f4ede3;border-radius:8px;font-size:13px;">Ya podés cargar saldo, transferir y cambiar entre monedas (USD, EUR, ARS, COP, MXN, BRL) desde un solo lugar.</p>`,
+      bodyHtml: `<p style="margin:0;padding:14px 16px;background:#f4ede3;border-radius:8px;font-size:13px;">Ya puedes cargar saldo, transferir y cambiar entre monedas (USD, EUR, ARS, COP, MXN, BRL) desde un solo lugar.</p>`,
       ctaLabel: "Ir a mi cuenta",
       ctaUrl: dashboardUrl,
     }),

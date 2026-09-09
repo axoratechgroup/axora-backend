@@ -23,7 +23,7 @@ function escapeHtml(value: string): string {
 }
 
 function money(value: string | number, currency: string): string {
-  return `${Number(value).toLocaleString("es-AR", {
+  return `${Number(value).toLocaleString("es-ES", {
     minimumFractionDigits: 2, maximumFractionDigits: 8,
   })} ${currency}`;
 }
