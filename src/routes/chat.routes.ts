@@ -4,11 +4,139 @@ import { askGemini } from "../services/geminiChat.js";
 
 export const chatRouter = Router();
 
-const ACTION_LABELS: Record<string, (args: Record<string, unknown>) => string> = {
-  propose_transfer: (a) => `transferir ${a.amount} ${a.currency} a ${a.recipient_username}`,
-  propose_topup: (a) => `cargar ${a.amount} ${a.currency} a tu cuenta`,
-  propose_exchange: (a) => `cambiar ${a.amount} ${a.from_currency} a ${a.to_currency}`,
+const SUPPORTED_CURRENCIES = new Set(["USD", "EUR", "ARS", "COP", "MXN", "BRL"]);
+
+const CURRENCY_SYNONYMS: Record<string, string> = {
+  dolar: "USD",
+  dolares: "USD",
+  dollar: "USD",
+  dollars: "USD",
+  usd: "USD",
+  euro: "EUR",
+  euros: "EUR",
+  eur: "EUR",
+  cop: "COP",
+  peso_colombiano: "COP",
+  pesos_colombianos: "COP",
+  ars: "ARS",
+  peso_argentino: "ARS",
+  pesos_argentinos: "ARS",
+  mxn: "MXN",
+  peso_mexicano: "MXN",
+  pesos_mexicanos: "MXN",
+  brl: "BRL",
+  real: "BRL",
+  reales: "BRL",
+  real_brasileno: "BRL",
 };
+
+export function normalizeCurrency(raw?: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const cleaned = raw.trim().toLowerCase().replace(/[^a-z_]/g, "");
+  if (CURRENCY_SYNONYMS[cleaned]) return CURRENCY_SYNONYMS[cleaned];
+  const upper = raw.trim().toUpperCase();
+  if (SUPPORTED_CURRENCIES.has(upper)) return upper;
+  return null;
+}
+
+export function normalizeAmount(raw?: unknown): number | null {
+  if (raw === undefined || raw === null) return null;
+  const num = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return Math.round(num * 100) / 100;
+}
+
+export function validateAndNormalizeProposedAction(
+  name: string,
+  rawArgs: Record<string, unknown> = {}
+): {
+  isValid: boolean;
+  actionType?: "transfer" | "topup" | "exchange";
+  params?: Record<string, unknown>;
+  reply: string;
+} {
+  const actionType = name.replace("propose_", "");
+
+  if (actionType === "topup") {
+    const amount = normalizeAmount(rawArgs.amount);
+    const currency = normalizeCurrency(rawArgs.currency);
+
+    if (!amount || !currency) {
+      return {
+        isValid: false,
+        reply: "Para realizar una carga de saldo, por favor indícame un monto numérico mayor a 0 y una moneda válida (USD, EUR, COP, ARS, MXN o BRL).",
+      };
+    }
+
+    return {
+      isValid: true,
+      actionType: "topup",
+      params: { amount, currency },
+      reply: `¿Confirmas que deseas cargar ${amount} ${currency} a tu cuenta de AXORA?`,
+    };
+  }
+
+  if (actionType === "transfer") {
+    const recipient = typeof rawArgs.recipient_username === "string"
+      ? rawArgs.recipient_username.trim().replace(/^@/, "")
+      : "";
+    const amount = normalizeAmount(rawArgs.amount);
+    const currency = normalizeCurrency(rawArgs.currency);
+
+    if (!recipient) {
+      return {
+        isValid: false,
+        reply: "Para realizar una transferencia, por favor indícame el nombre de usuario del destinatario, además del monto y la moneda.",
+      };
+    }
+
+    if (!amount || !currency) {
+      return {
+        isValid: false,
+        reply: `Para transferir a ${recipient}, por favor especifica un monto mayor a 0 y una moneda válida (USD, EUR, COP, ARS, MXN o BRL).`,
+      };
+    }
+
+    return {
+      isValid: true,
+      actionType: "transfer",
+      params: { recipient_username: recipient, amount, currency },
+      reply: `¿Confirmas que deseas transferir ${amount} ${currency} al usuario ${recipient}?`,
+    };
+  }
+
+  if (actionType === "exchange") {
+    const amount = normalizeAmount(rawArgs.amount);
+    const fromCurrency = normalizeCurrency(rawArgs.from_currency);
+    const toCurrency = normalizeCurrency(rawArgs.to_currency);
+
+    if (!amount || !fromCurrency || !toCurrency) {
+      return {
+        isValid: false,
+        reply: "Para realizar un cambio de divisas, por favor especifica el monto a convertir, la moneda de origen y la moneda de destino (USD, EUR, COP, ARS, MXN, BRL).",
+      };
+    }
+
+    if (fromCurrency === toCurrency) {
+      return {
+        isValid: false,
+        reply: "La moneda de origen y la de destino deben ser distintas para realizar una conversión de divisas.",
+      };
+    }
+
+    return {
+      isValid: true,
+      actionType: "exchange",
+      params: { from_currency: fromCurrency, to_currency: toCurrency, amount },
+      reply: `¿Confirmas que deseas convertir ${amount} ${fromCurrency} a ${toCurrency}?`,
+    };
+  }
+
+  return {
+    isValid: false,
+    reply: "No comprendí la operación solicitada. Por favor indícame si deseas realizar una carga de saldo, una transferencia o un cambio de divisas.",
+  };
+}
 
 /**
  * @openapi
@@ -59,22 +187,23 @@ chatRouter.post("/chat", authenticateToken, async (req, res) => {
     return res.status(400).json({ error: "El mensaje es demasiado largo (máximo 2000 caracteres)" });
   }
 
-  // Limitamos cuánto historial se reenvía a Gemini en cada turno: sin este
-  // tope, un cliente podría mandar un array de history cada vez más grande
-  // y hacer crecer el costo (tokens) y la latencia de cada mensaje sin límite.
   const safeHistory = Array.isArray(history) ? history.slice(-20) : [];
 
   try {
     const result = await askGemini(message.trim(), safeHistory);
 
     if (result.type === "function_call") {
-      const actionType = result.name.replace("propose_", "");
-      const describeAction = ACTION_LABELS[result.name];
-      const description = describeAction ? describeAction(result.args) : "esa operación";
+      const validated = validateAndNormalizeProposedAction(result.name, result.args);
+
+      if (validated.isValid && validated.actionType && validated.params) {
+        return res.status(200).json({
+          reply: validated.reply,
+          proposedAction: { type: validated.actionType, params: validated.params },
+        });
+      }
 
       return res.status(200).json({
-        reply: `¿Confirmas ${description}?`,
-        proposedAction: { type: actionType, params: result.args },
+        reply: validated.reply,
       });
     }
 
@@ -129,12 +258,6 @@ chatRouter.post("/chat/confirm", authenticateToken, async (req, res) => {
   }
 
   try {
-    // OJO: la URL base NO debe construirse con req.protocol/req.get("host").
-    // Esos valores vienen del request entrante y un cliente podría mandar un
-    // header Host distinto; como esta llamada reenvía el Authorization real
-    // del usuario, eso abriría una vía de SSRF / fuga de token hacia un host
-    // arbitrario. Esta ruta siempre corre en el mismo proceso que expone
-    // /wallet/*, así que el destino correcto es siempre localhost:PORT.
     const baseUrl = `http://localhost:${process.env.PORT || 3000}`;
     const response = await fetch(`${baseUrl}${endpointPath}`, {
       method: "POST",
@@ -154,7 +277,7 @@ chatRouter.post("/chat/confirm", authenticateToken, async (req, res) => {
     }
 
     res.status(200).json({
-      reply: "Listo, lo hice. ✅",
+      reply: "Operación realizada con éxito. La transacción ha sido procesada correctamente.",
       transaction: data.transaction,
     });
   } catch (error) {
