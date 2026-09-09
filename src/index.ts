@@ -39,14 +39,15 @@ app.use(chatRouter);
 app.use(ratesRouter);
 
 // Manejador global de errores para asegurar respuestas JSON consistentes con cabeceras CORS
-app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+app.use((err: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
   if (res.headersSent) {
     return next(err);
   }
   console.error("Unhandled API error:", err);
-  const status = typeof err?.status === "number" ? err.status : 500;
+  const errorObj = err as { status?: number; message?: string } | undefined;
+  const status = typeof errorObj?.status === "number" ? errorObj.status : 500;
   res.status(status).json({
-    error: err?.message || "Error interno del servidor.",
+    error: errorObj?.message || "Error interno del servidor.",
   });
 });
 
@@ -58,8 +59,9 @@ async function bootstrapAdmin() {
     if (res.rowCount && res.rowCount > 0) {
       console.log(`🛡️  Admin configurado exitosamente: ${res.rows[0].email} (${res.rows[0].role})`);
     }
-  } catch (err: any) {
-    console.warn("Aviso en bootstrap admin:", err?.message);
+  } catch (err: unknown) {
+    const errorObj = err as { message?: string } | undefined;
+    console.warn("Aviso en bootstrap admin:", errorObj?.message);
   }
 }
 

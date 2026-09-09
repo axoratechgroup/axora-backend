@@ -133,10 +133,11 @@ authRouter.post("/auth/register", registerRateLimiter, async (req, res) => {
     } catch (error) {
       console.error("Error construyendo email de bienvenida:", error);
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     await client.query("ROLLBACK");
 
-    if (error.code === "23505") {
+    const pgError = error as { code?: string; message?: string } | undefined;
+    if (pgError?.code === "23505") {
       return res
         .status(409)
         .json({ error: "El usuario o el correo ya están en uso" });
