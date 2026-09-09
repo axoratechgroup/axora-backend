@@ -1,5 +1,12 @@
 # AXORA Backend
 
+> **🚀 Entorno de Producción:**  
+> - **API REST (Railway):** [`https://axora-backend-production-4e8d.up.railway.app`](https://axora-backend-production-4e8d.up.railway.app)  
+> - **Documentación Swagger / OpenAPI 3.0:** [`https://axora-backend-production-4e8d.up.railway.app/docs`](https://axora-backend-production-4e8d.up.railway.app/docs)  
+> - **Especificación OpenAPI JSON:** [`https://axora-backend-production-4e8d.up.railway.app/docs.json`](https://axora-backend-production-4e8d.up.railway.app/docs.json)  
+> - **Estado:** Producción activo y saludable (`healthy`) — PostgreSQL 16 + Express 5 + Node.js 22 LTS
+
+
 ## Correos por movimiento
 
 `TOP_UP` y `SWAP` crean una notificación para el titular; `TRANSFER` crea dos,
@@ -187,6 +194,29 @@ psql "$DATABASE_URL" -f seeds/backfill_wallets_and_balances.sql
 - `transactions`: Registro inmutable de transacciones (`TOP_UP`, `TRANSFER`, `SWAP`) con balances anteriores y posteriores.
 - `exchange_rates`: Caché local de tasas de cambio con tiempo de expiración (`expires_at`).
 - `notification_outbox`: Bandeja de salida para notificaciones y auditoría asíncrona.
+
+### 🏛️ Justificación de Decisiones de Diseño y Arquitectura de Datos
+
+El modelo relacional y la estrategia de persistencia fueron diseñados siguiendo rigurosos principios de ingeniería financiera, normalización (3FN), consistencia transaccional (ACID) y prevención de condiciones de carrera:
+
+#### 1. Separación de `wallets` (1:1 con `users`) y `balances` (1:N por divisa)
+- **Extensibilidad sin DDL destructivo:** En lugar de agregar columnas fijas como `balance_usd`, `balance_eur` en `users` o `wallets`, la tabla `balances` segrega cada saldo como una entidad independiente referenciada a la clave foránea `currencies(code)`. Añadir soporte para una nueva divisa (ej. JPY o GBP) solo requiere insertar un registro en `currencies`, sin necesidad de migraciones de esquema `ALTER TABLE` ni paradas de servicio en tablas de millones de usuarios.
+- **Granularidad de Bloqueos (Locking):** Permite ejecutar `SELECT ... FOR UPDATE` exclusivamente sobre las filas de las divisas involucradas en una operación (ej. `USD` y `EUR` durante un swap), dejando intactos y disponibles para operaciones simultáneas los saldos del mismo usuario en `COP`, `MXN`, `BRL` o `ARS`.
+- **Integridad referencial y restricciones:** La restricción `unique_wallet_currency UNIQUE(wallet_id, currency)` impide saldos duplicados por divisa, y `positive_balance CHECK (amount >= 0)` garantiza a nivel de motor que ningún saldo caiga jamás en valores negativos, impidiendo sobregiros incluso ante fallos de capa de aplicación.
+
+#### 2. Estrategia de Registro de Transacciones (`transactions`)
+- **Pista de Auditoría Inmutable (Ledger Snapshot):** Cada movimiento registra de forma inmutable no solo los importes transferidos (`from_amount`, `to_amount`), sino también el estado exacto antes y después (`from_balance_before`, `from_balance_after`, `to_balance_before`, `to_balance_after`).
+- **Reconciliación Contable Instantánea:** Si surge alguna discrepancia o se audita una cuenta, no es necesario recalcular el histórico completo de eventos desde el génesis; basta verificar que `balance_after - balance_before == amount`.
+- **Restricción Exhaustiva de Integridad (`chk_transaction_sides`):** El motor PostgreSQL valida mediante un constraint `CHECK` que transacciones `TOP_UP` no tengan débitos, que transferencias `TRANSFER` tengan emisor, receptor e importes idénticos con contraparte no nula, y que cambios `SWAP` contengan tasa de cambio aplicada obligatoria y no involucren billeteras ajenas.
+
+#### 3. Prevención Determinista de Deadlocks y Condiciones de Carrera
+- **Ordenamiento canónico de claves:** En transferencias entre usuarios y en intercambios de divisas, las consultas concurrentes adquieren bloqueos de fila (`FOR UPDATE`) ordenados alfabéticamente por clave primaria (`ORDER BY wallet_id` en transferencias, `ORDER BY currency` en swaps). Si dos usuarios (A y B) se transfieren dinero mutuamente en el mismo milisegundo, ambos procesos compiten por el mismo recurso en idéntico orden, transformando un potencial abrazo mortal (*deadlock*) en una cola de espera determinista que resuelve ambas transferencias en milisegundos.
+
+#### 4. Arquitectura Transactional Outbox para Notificaciones AWS SES
+- **Consistencia Eventual Garantizada:** En lugar de llamar a APIs externas de correo en medio de una transacción bancaria (lo que arriesgaría inconsistencias si la red cae tras debitar el saldo), la notificación se encola en `notification_outbox` dentro de la misma transacción SQL del movimiento. Solo tras el `COMMIT` exitoso se despacha el correo mediante la Serverless Function de Vercel y el SDK de AWS SES. Si el despacho falla, la operación financiera queda intacta y el outbox registra el estado `FAILED` con reintentos trazables.
+
+#### 5. Resiliencia de Cotizaciones y Fallback Multinivel
+- **Caché con TTL y Contingencia:** Las tasas de cambio se almacenan en `exchange_rates` con un TTL de 60 minutos. Si la API externa no está disponible o experimenta latencia, el sistema recurre en cascada: primero a la última cotización histórica válida registrada en PostgreSQL, y en caso de ausencia total de datos, a la matriz estática de contingencia cruzada (`FALLBACK_RATES_TO_USD`), asegurando que las conversiones nunca fallen por cortes en proveedores externos.
 
 ---
 
@@ -528,7 +558,7 @@ Lista global de todas las transacciones realizadas en el sistema con los datos d
 
 ## 🧪 Pruebas Automatizadas
 
-El proyecto utiliza **Vitest** y **Supertest** para pruebas unitarias y de integración de rutas, middlewares y servicios externos simulados:
+El proyecto utiliza **Vitest** y **Supertest** para pruebas unitarias y de integración de rutas, middlewares y servicios externos simulados (**14 suites de pruebas, 130 pruebas en total — 100% pasando**):
 
 ```bash
 # Ejecutar todas las pruebas una sola vez
@@ -540,9 +570,22 @@ npm test
 
 ### Cobertura de Pruebas
 
-- **`auth.middleware.test.ts`**: Validación de presencia, firma y expiración de tokens JWT; control de acceso basado en roles (`requireAdmin`).
-- **`auth.routes.test.ts`**: Registro con validaciones de contraseña, emails inválidos, duplicados y flujo completo de login.
-- **`wallet.routes.test.ts`**: Consulta de saldos, cargas con control de tope ($10.000 USD), transferencias con límite ($2.000 USD), autosuficiencia de balance, intercambios con comisión del 0.3% y mitigación de deadlocks.
-- **`rates.routes.test.ts`**: Validación de parámetros ISO, rangos temporales admitidos y tratamiento de fallas del proveedor (502).
-- **`exchangeRates.test.ts`**: Consulta a APIs remotas, cacheo en base de datos y tasas fallback.
-- **`admin.routes.test.ts`**: Acceso denegado a usuarios regulares y consulta exitosa para administradores.
+- **Rutas y Controladores (5 suites)**:
+  - `auth.routes.test.ts`: Registro con validaciones de contraseña, emails inválidos, prevención de colisiones y flujo de login.
+  - `wallet.routes.test.ts`: Balances, cargas con límite (\$10.000 USD), transferencias con tope (\$2.000 USD), swaps con 0.3% de comisión y consistencia ACID.
+  - `rates.routes.test.ts`: Validación de parámetros ISO, rangos temporales y tratamiento de fallas del upstream (502).
+  - `admin.routes.test.ts`: Acceso denegado a usuarios regulares y consulta exitosa de métricas para administradores.
+  - `chat.routes.test.ts`: Conversación en lenguaje natural, proposición de transacciones y ejecución protegida vía `/chat/confirm`.
+- **Servicios Financieros y Resiliencia (1 suite)**:
+  - `exchangeRates.test.ts`: Consulta a APIs remotas, cacheo en base de datos con TTL y fallback multinivel (PostgreSQL + matriz de contingencia).
+- **Inteligencia Artificial (1 suite)**:
+  - `geminiChat.test.ts`: Integración con Google Gemini (modelo configurable vía `GEMINI_MODEL`), extracción de tool calls e inferencia de intenciones de usuario.
+- **Notificaciones y Transactional Outbox (3 suites)**:
+  - `notificationOutbox.test.ts`: Encolado dentro de la transacción SQL, transiciones de estado (`PROCESSING`, `SENT`, `FAILED`) y reintentos.
+  - `transactionEmail.test.ts`: Construcción de correos por tipo de movimiento (`TOP_UP`, `TRANSFER`, `SWAP`) y escape HTML preventivo contra inyecciones.
+  - `emailTemplates.test.ts`: Renderizado fiel de plantillas transaccionales, enlaces y formateo de importes.
+- **Middlewares y Seguridad (4 suites)**:
+  - `auth.middleware.test.ts`: Validación de firma, presencia y expiración de tokens JWT; control de acceso basado en roles (`requireAdmin`).
+  - `rateLimiter.test.ts`: Mitigación contra ataques de fuerza bruta y abusos de API.
+  - `cors.test.ts`: Verificación de cabeceras de origen permitidas y soporte para preflights OPTIONS.
+  - `password.validator.test.ts`: Validación de robustez de contraseñas (longitud, mayúsculas, números y caracteres especiales).
