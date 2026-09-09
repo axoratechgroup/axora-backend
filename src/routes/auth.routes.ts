@@ -294,7 +294,8 @@ authRouter.post("/auth/forgot-password", forgotPasswordRateLimiter, async (req, 
         [user.id, tokenHash, expiresAt],
       );
 
-      const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${rawToken}`;
+      const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+      const resetLink = new URL(`/reset-password?token=${rawToken}`, frontendUrl).href;
 
       sendEmail({
         to: email,
