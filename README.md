@@ -558,7 +558,7 @@ Lista global de todas las transacciones realizadas en el sistema con los datos d
 
 ## 🧪 Pruebas Automatizadas
 
-El proyecto utiliza **Vitest** y **Supertest** para pruebas unitarias y de integración de rutas, middlewares y servicios externos simulados:
+El proyecto utiliza **Vitest** y **Supertest** para pruebas unitarias y de integración de rutas, middlewares y servicios externos simulados (**14 suites de pruebas, 130 pruebas en total — 100% pasando**):
 
 ```bash
 # Ejecutar todas las pruebas una sola vez
@@ -570,9 +570,22 @@ npm test
 
 ### Cobertura de Pruebas
 
-- **`auth.middleware.test.ts`**: Validación de presencia, firma y expiración de tokens JWT; control de acceso basado en roles (`requireAdmin`).
-- **`auth.routes.test.ts`**: Registro con validaciones de contraseña, emails inválidos, duplicados y flujo completo de login.
-- **`wallet.routes.test.ts`**: Consulta de saldos, cargas con control de tope ($10.000 USD), transferencias con límite ($2.000 USD), autosuficiencia de balance, intercambios con comisión del 0.3% y mitigación de deadlocks.
-- **`rates.routes.test.ts`**: Validación de parámetros ISO, rangos temporales admitidos y tratamiento de fallas del proveedor (502).
-- **`exchangeRates.test.ts`**: Consulta a APIs remotas, cacheo en base de datos y tasas fallback.
-- **`admin.routes.test.ts`**: Acceso denegado a usuarios regulares y consulta exitosa para administradores.
+- **Rutas y Controladores (5 suites)**:
+  - `auth.routes.test.ts`: Registro con validaciones de contraseña, emails inválidos, prevención de colisiones y flujo de login.
+  - `wallet.routes.test.ts`: Balances, cargas con límite (\$10.000 USD), transferencias con tope (\$2.000 USD), swaps con 0.3% de comisión y consistencia ACID.
+  - `rates.routes.test.ts`: Validación de parámetros ISO, rangos temporales y tratamiento de fallas del upstream (502).
+  - `admin.routes.test.ts`: Acceso denegado a usuarios regulares y consulta exitosa de métricas para administradores.
+  - `chat.routes.test.ts`: Conversación en lenguaje natural, proposición de transacciones y ejecución protegida vía `/chat/confirm`.
+- **Servicios Financieros y Resiliencia (1 suite)**:
+  - `exchangeRates.test.ts`: Consulta a APIs remotas, cacheo en base de datos con TTL y fallback multinivel (PostgreSQL + matriz de contingencia).
+- **Inteligencia Artificial (1 suite)**:
+  - `geminiChat.test.ts`: Integración con Google Gemini (modelo configurable vía `GEMINI_MODEL`), extracción de tool calls e inferencia de intenciones de usuario.
+- **Notificaciones y Transactional Outbox (3 suites)**:
+  - `notificationOutbox.test.ts`: Encolado dentro de la transacción SQL, transiciones de estado (`PROCESSING`, `SENT`, `FAILED`) y reintentos.
+  - `transactionEmail.test.ts`: Construcción de correos por tipo de movimiento (`TOP_UP`, `TRANSFER`, `SWAP`) y escape HTML preventivo contra inyecciones.
+  - `emailTemplates.test.ts`: Renderizado fiel de plantillas transaccionales, enlaces y formateo de importes.
+- **Middlewares y Seguridad (4 suites)**:
+  - `auth.middleware.test.ts`: Validación de firma, presencia y expiración de tokens JWT; control de acceso basado en roles (`requireAdmin`).
+  - `rateLimiter.test.ts`: Mitigación contra ataques de fuerza bruta y abusos de API.
+  - `cors.test.ts`: Verificación de cabeceras de origen permitidas y soporte para preflights OPTIONS.
+  - `password.validator.test.ts`: Validación de robustez de contraseñas (longitud, mayúsculas, números y caracteres especiales).
