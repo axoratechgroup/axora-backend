@@ -71,7 +71,7 @@ describe("Auth Routes", () => {
           last_name: "Gómez",
           username: "camilag",
           email: "Camila@Axora.Test",
-          password: "password123",
+          password: "Password123!",
         });
 
       expect(response.status).toBe(201);
@@ -111,7 +111,7 @@ describe("Auth Routes", () => {
           last_name: "Gómez",
           username: "camilag",
           email: "correo-sin-arroba",
-          password: "password123",
+          password: "Password123!",
         });
 
       expect(response.status).toBe(400);
@@ -135,6 +135,22 @@ describe("Auth Routes", () => {
       expect(mockClientRelease).toHaveBeenCalled();
     });
 
+    it("retorna 400 si la contraseña no contiene mayúsculas o caracteres especiales", async () => {
+      const response = await request(app)
+        .post("/auth/register")
+        .send({
+          first_name: "Camila",
+          last_name: "Gómez",
+          username: "camilag",
+          email: "camila@axora.test",
+          password: "password123",
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe("La contraseña debe contener al menos una letra mayúscula");
+      expect(mockClientRelease).toHaveBeenCalled();
+    });
+
     it("retorna 409 si el usuario o email ya existe (código 23505)", async () => {
       const pgError = new Error("duplicate key value violates unique constraint") as any;
       pgError.code = "23505";
@@ -150,7 +166,7 @@ describe("Auth Routes", () => {
           last_name: "Gómez",
           username: "camilag",
           email: "camila@axora.test",
-          password: "password123",
+          password: "Password123!",
         });
 
       expect(response.status).toBe(409);
@@ -368,7 +384,7 @@ describe("Auth Routes", () => {
 
       const res = await request(app)
         .post("/auth/reset-password")
-        .send({ token: "invalid-token", newPassword: "newSecurePassword123" });
+        .send({ token: "invalid-token", newPassword: "NewSecurePassword123!" });
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe("El enlace de recuperación no es válido");
@@ -389,7 +405,7 @@ describe("Auth Routes", () => {
 
       const res = await request(app)
         .post("/auth/reset-password")
-        .send({ token: "used-token", newPassword: "newSecurePassword123" });
+        .send({ token: "used-token", newPassword: "NewSecurePassword123!" });
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe("Este enlace ya fue utilizado");
@@ -409,7 +425,7 @@ describe("Auth Routes", () => {
 
       const res = await request(app)
         .post("/auth/reset-password")
-        .send({ token: "expired-token", newPassword: "newSecurePassword123" });
+        .send({ token: "expired-token", newPassword: "NewSecurePassword123!" });
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe("El enlace de recuperación ha expirado");
@@ -434,7 +450,7 @@ describe("Auth Routes", () => {
 
       const res = await request(app)
         .post("/auth/reset-password")
-        .send({ token: "valid-token", newPassword: "newSecurePassword123" });
+        .send({ token: "valid-token", newPassword: "NewSecurePassword123!" });
 
       expect(res.status).toBe(200);
       expect(res.body.message).toBe("Contraseña actualizada correctamente");

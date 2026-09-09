@@ -12,6 +12,7 @@ import {
   registerRateLimiter,
   forgotPasswordRateLimiter,
 } from "../middleware/rateLimiter.js";
+import { validateStrongPassword } from "../utils/password.validator.js";
 
 export const authRouter = Router();
 
@@ -78,10 +79,9 @@ authRouter.post("/auth/register", registerRateLimiter, async (req, res) => {
       });
     }
 
-    if (password.length < 8) {
-      return res
-        .status(400)
-        .json({ error: "La contraseña debe tener al menos 8 caracteres" });
+    const passwordValidation = validateStrongPassword(password);
+    if (!passwordValidation.isValid) {
+      return res.status(400).json({ error: passwordValidation.error });
     }
 
     const password_hash = await bcrypt.hash(password, 10);
@@ -356,8 +356,9 @@ authRouter.post("/auth/reset-password", async (req, res) => {
     return res.status(400).json({ error: "Faltan datos: token y newPassword son requeridos" });
   }
 
-  if (newPassword.length < 8) {
-    return res.status(400).json({ error: "La contraseña debe tener al menos 8 caracteres" });
+  const passwordValidation = validateStrongPassword(newPassword);
+  if (!passwordValidation.isValid) {
+    return res.status(400).json({ error: passwordValidation.error });
   }
 
   const client = await pool.connect();
