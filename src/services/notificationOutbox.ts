@@ -44,7 +44,7 @@ export async function dispatchTransactionNotifications(transactionId: string): P
            LEFT JOIN users recipient ON recipient.id = rw.user_id WHERE t.id = $1`, [transactionId],
         );
         if (!result.rows[0]) throw new Error("Transacción no encontrada");
-        const content = buildTransactionEmail(result.rows[0], notification.recipient_role, process.env.FRONTEND_URL ?? "");
+        const content = buildTransactionEmail(result.rows[0], notification.recipient_role, process.env.FRONTEND_URL || "http://localhost:5173");
         await sendEmail({ to: notification.recipient_email, ...content });
       } catch {
         await pool.query(

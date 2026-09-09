@@ -220,7 +220,11 @@ walletRouter.post("/wallet/topup", authenticateToken, async (req, res) => {
     await client.query("BEGIN");
 
     const wallet = await getWalletByUserId(req.user!.id, client);
-    const walletId = wallet!.id;
+    if (!wallet) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "El usuario no tiene wallet" });
+    }
+    const walletId = wallet.id;
 
     const balanceResult = await client.query(
       "SELECT amount FROM balances WHERE wallet_id = $1 AND currency = $2 FOR UPDATE",
@@ -304,7 +308,8 @@ walletRouter.post("/wallet/topup", authenticateToken, async (req, res) => {
  *         description: Destinatario no encontrado
  */
 walletRouter.post("/wallet/transfer", authenticateToken, async (req, res) => {
-  const { recipient_username, currency, memo } = req.body;
+  const { currency, memo } = req.body;
+  const recipient_username: string | undefined = req.body.recipient_username?.trim().toLowerCase();
   const amount = Number(req.body.amount);
 
   if (!recipient_username || !currency || !req.body.amount) {
@@ -336,7 +341,11 @@ walletRouter.post("/wallet/transfer", authenticateToken, async (req, res) => {
     await client.query("BEGIN");
 
     const senderWallet = await getWalletByUserId(req.user!.id, client);
-    const senderWalletId = senderWallet!.id;
+    if (!senderWallet) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "El usuario no tiene wallet" });
+    }
+    const senderWalletId = senderWallet.id;
 
     const recipientResult = await client.query(
       `SELECT u.id AS user_id, w.id AS wallet_id
@@ -494,7 +503,11 @@ walletRouter.post("/wallet/exchange", authenticateToken, async (req, res) => {
     await client.query("BEGIN");
 
     const wallet = await getWalletByUserId(req.user!.id, client);
-    const walletId = wallet!.id;
+    if (!wallet) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "El usuario no tiene wallet" });
+    }
+    const walletId = wallet.id;
 
     // Bloqueamos las dos filas de balance (origen y destino) en una sola
     // consulta, ordenadas por moneda, para evitar problemas si el mismo

@@ -55,8 +55,17 @@ chatRouter.post("/chat", authenticateToken, async (req, res) => {
     return res.status(400).json({ error: "Falta el mensaje" });
   }
 
+  if (message.length > 2000) {
+    return res.status(400).json({ error: "El mensaje es demasiado largo (máximo 2000 caracteres)" });
+  }
+
+  // Limitamos cuánto historial se reenvía a Gemini en cada turno: sin este
+  // tope, un cliente podría mandar un array de history cada vez más grande
+  // y hacer crecer el costo (tokens) y la latencia de cada mensaje sin límite.
+  const safeHistory = Array.isArray(history) ? history.slice(-20) : [];
+
   try {
-    const result = await askGemini(message.trim(), Array.isArray(history) ? history : []);
+    const result = await askGemini(message.trim(), safeHistory);
 
     if (result.type === "function_call") {
       const actionType = result.name.replace("propose_", "");
@@ -120,7 +129,13 @@ chatRouter.post("/chat/confirm", authenticateToken, async (req, res) => {
   }
 
   try {
-    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    // OJO: la URL base NO debe construirse con req.protocol/req.get("host").
+    // Esos valores vienen del request entrante y un cliente podría mandar un
+    // header Host distinto; como esta llamada reenvía el Authorization real
+    // del usuario, eso abriría una vía de SSRF / fuga de token hacia un host
+    // arbitrario. Esta ruta siempre corre en el mismo proceso que expone
+    // /wallet/*, así que el destino correcto es siempre localhost:PORT.
+    const baseUrl = `http://localhost:${process.env.PORT || 3000}`;
     const response = await fetch(`${baseUrl}${endpointPath}`, {
       method: "POST",
       headers: {
