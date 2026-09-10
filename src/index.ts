@@ -1,53 +1,57 @@
 import express from "express";
+import cors from "cors";
+import swaggerUi from "swagger-ui-express";
+import { corsOptions } from "./config/cors.js";
+import { swaggerSpec } from "./config/swagger.js";
+import { authRouter } from "./routes/auth.routes.js";
+import { walletRouter } from "./routes/wallet.routes.js";
+import { adminRouter } from "./routes/admin.routes.js";
+import { chatRouter } from "./routes/chat.routes.js";
+import { ratesRouter } from "./routes/rates.routes.js";
+
 import { pool } from "./config/database.js";
 
 const app = express();
 
+app.set("trust proxy", 1);
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
-app.get("/users", async (req, res) => {
-  try {
-    const result = await pool.query(
-      "SELECT * FROM users ORDER BY created_at DESC"
-    );
-
-    res.json(result.rows);
-  } catch (error) {
-    console.error(error);
-
-    res.status(500).json({
-      error: "Error al obtener los usuarios",
-    });
-  }
+app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.get("/docs.json", (req, res) => {
+  res.json(swaggerSpec);
 });
 
-app.post("/users", async (req, res) => {
-  try {
-    const { first_name, last_name, username, email } = req.body;
-
-    if (!first_name || !last_name || !username || !email) {
-      return res.status(400).json({
-        error: "first_name, last_name, username y email son obligatorios",
-      });
-    }
-
-    const result = await pool.query(
-      `INSERT INTO users (first_name, last_name, username, email)
-       VALUES ($1, $2, $3, $4)
-       RETURNING *`,
-      [first_name, last_name, username, email]
-    );
-
-    res.status(201).json(result.rows[0]);
-  } catch (error) {
-    console.error(error);
-
-    res.status(500).json({
-      error: "Error al crear el usuario",
-    });
-  }
+app.get("/", (req, res) => {
+  res.json({
+    name: "AXORA API",
+    status: "healthy",
+    version: "1.0.0",
+    docs: "/docs",
+  });
 });
 
-app.listen(3000, () => {
+app.use(authRouter);
+app.use(walletRouter);
+app.use(adminRouter);
+app.use(chatRouter);
+app.use(ratesRouter);
+
+// Manejador global de errores para asegurar respuestas JSON consistentes con cabeceras CORS
+app.use((err: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (res.headersSent) {
+    return next(err);
+  }
+  console.error("Unhandled API error:", err);
+  const errorObj = err as { status?: number; message?: string } | undefined;
+  const status = typeof errorObj?.status === "number" ? errorObj.status : 500;
+  res.status(status).json({
+    error: errorObj?.message || "Error interno del servidor.",
+  });
+});
+
+app.listen(process.env.PORT || 3000, () => {
   console.log("🚀 AXORA Backend corriendo en http://localhost:3000");
 });
+
