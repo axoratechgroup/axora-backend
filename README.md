@@ -537,8 +537,15 @@ Ejecuta la operación financiera previamente propuesta por el asistente una vez 
 
 #### `GET /admin/users`
 Lista todos los usuarios registrados en la plataforma.
-- **Respuesta `200 OK`**: Array de objetos de usuario con `id`, `first_name`, `last_name`, `username`, `email` y `created_at`.
+- **Respuesta `200 OK`**: Array de objetos de usuario con `id`, `first_name`, `last_name`, `username`, `email`, `role` y `created_at`.
 - **Errores**: `401 Unauthorized` (sin token) o `403 Forbidden` (si el usuario no tiene rol admin).
+
+#### `PATCH /admin/users/:id/role`
+Cambia el rol (`user` o `admin`) de un usuario existente.
+- **Body**: `{ "role": "user" | "admin" }`.
+- **Respuesta `200 OK`**: Objeto de usuario actualizado con `id`, `first_name`, `last_name`, `username`, `email` y `role`.
+- **Reglas de negocio**: un admin no puede quitarse su propio rol, ni degradar al último administrador restante (el sistema siempre debe conservar al menos uno).
+- **Errores**: `400 Bad Request` (rol inválido, o dejaría al sistema sin admins), `401 Unauthorized`, `403 Forbidden`, `404 Not Found` (usuario inexistente).
 
 #### `GET /admin/transactions`
 Lista global de todas las transacciones realizadas en el sistema con los datos del usuario emisor (`username`, `email`).
@@ -558,7 +565,7 @@ Lista global de todas las transacciones realizadas en el sistema con los datos d
 
 ## 🧪 Pruebas Automatizadas
 
-El proyecto utiliza **Vitest** y **Supertest** para pruebas unitarias y de integración de rutas, middlewares y servicios externos simulados (**14 suites de pruebas, 130 pruebas en total — 100% pasando**):
+El proyecto utiliza **Vitest** y **Supertest** para pruebas unitarias y de integración de rutas, middlewares y servicios externos simulados (**14 suites de pruebas, 138 pruebas en total — 100% pasando**):
 
 ```bash
 # Ejecutar todas las pruebas una sola vez
