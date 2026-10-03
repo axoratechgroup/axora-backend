@@ -4,10 +4,16 @@ import jwt from "jsonwebtoken";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockQuery = vi.fn();
+const mockClientQuery = vi.fn();
+const mockRelease = vi.fn();
 
 vi.mock("../config/database.js", () => ({
   pool: {
     query: (...args: any[]) => mockQuery(...args),
+    connect: async () => ({
+      query: (...args: any[]) => mockClientQuery(...args),
+      release: () => mockRelease(),
+    }),
   },
 }));
 
@@ -181,6 +187,155 @@ describe("Admin Routes", () => {
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual(updatedUser);
+    });
+  });
+
+  describe("DELETE /admin/users/:id", () => {
+    const sqlCalls = () =>
+      mockClientQuery.mock.calls.map((call) => String(call[0]).trim());
+
+    // Simula la secuencia de consultas del borrado según el rol del usuario objetivo.
+    const mockDeleteFlow = (opts: {
+      target: { role: string } | null;
+      otherAdmins?: number;
+    }) => {
+      mockClientQuery.mockImplementation(async (sql: string) => {
+        if (sql.includes("SELECT role FROM users")) {
+          return { rows: opts.target ? [opts.target] : [] };
+        }
+        if (sql.includes("COUNT(*)")) {
+          return { rows: [{ count: opts.otherAdmins ?? 0 }] };
+        }
+        return { rows: [] };
+      });
+    };
+
+    beforeEach(() => {
+      mockClientQuery.mockReset();
+    });
+
+    it("retorna 401 si no hay token", async () => {
+      const response = await request(app).delete("/admin/users/u-1");
+
+      expect(response.status).toBe(401);
+      expect(mockClientQuery).not.toHaveBeenCalled();
+    });
+
+    it("retorna 403 si el usuario no tiene rol admin", async () => {
+      const response = await request(app)
+        .delete("/admin/users/u-1")
+        .set("Authorization", `Bearer ${userToken}`);
+
+      expect(response.status).toBe(403);
+      expect(mockClientQuery).not.toHaveBeenCalled();
+    });
+
+    it("retorna 400 si el admin intenta eliminar su propia cuenta", async () => {
+      const response = await request(app)
+        .delete("/admin/users/admin-1")
+        .set("Authorization", `Bearer ${adminToken}`);
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe("No puedes eliminar tu propia cuenta");
+      expect(mockClientQuery).not.toHaveBeenCalled();
+    });
+
+    it("retorna 404 y hace ROLLBACK si el usuario no existe", async () => {
+      mockDeleteFlow({ target: null });
+
+      const response = await request(app)
+        .delete("/admin/users/no-existe")
+        .set("Authorization", `Bearer ${adminToken}`);
+
+      expect(response.status).toBe(404);
+      expect(sqlCalls()).toContain("ROLLBACK");
+      expect(sqlCalls()).not.toContain("COMMIT");
+      expect(mockRelease).toHaveBeenCalledTimes(1);
+    });
+
+    it("retorna 400 y hace ROLLBACK si eliminarlo dejaría el sistema sin administradores", async () => {
+      mockDeleteFlow({ target: { role: "admin" }, otherAdmins: 0 });
+
+      const response = await request(app)
+        .delete("/admin/users/u-admin")
+        .set("Authorization", `Bearer ${adminToken}`);
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe(
+        "Debe existir al menos un administrador.",
+      );
+      expect(sqlCalls()).toContain("ROLLBACK");
+      expect(sqlCalls()).not.toContain("COMMIT");
+      expect(sqlCalls().some((sql) => sql.startsWith("DELETE FROM users"))).toBe(
+        false,
+      );
+      expect(mockRelease).toHaveBeenCalledTimes(1);
+    });
+
+    it("retorna 204 y borra outbox, transacciones y usuario en una sola transacción", async () => {
+      mockDeleteFlow({ target: { role: "user" } });
+
+      const response = await request(app)
+        .delete("/admin/users/u-1")
+        .set("Authorization", `Bearer ${adminToken}`);
+
+      expect(response.status).toBe(204);
+
+      const calls = sqlCalls();
+      expect(calls[0]).toBe("BEGIN");
+      expect(calls[calls.length - 1]).toBe("COMMIT");
+
+      const outboxIdx = calls.findIndex((sql) =>
+        sql.startsWith("DELETE FROM notification_outbox"),
+      );
+      const txIdx = calls.findIndex((sql) =>
+        sql.startsWith("DELETE FROM transactions"),
+      );
+      const userIdx = calls.findIndex((sql) =>
+        sql.startsWith("DELETE FROM users"),
+      );
+      // Orden obligatorio por las FK: outbox -> transacciones -> usuario
+      expect(outboxIdx).toBeGreaterThan(0);
+      expect(txIdx).toBeGreaterThan(outboxIdx);
+      expect(userIdx).toBeGreaterThan(txIdx);
+
+      expect(calls).not.toContain("ROLLBACK");
+      expect(mockRelease).toHaveBeenCalledTimes(1);
+    });
+
+    it("retorna 204 al eliminar a un admin cuando existen otros admins", async () => {
+      mockDeleteFlow({ target: { role: "admin" }, otherAdmins: 1 });
+
+      const response = await request(app)
+        .delete("/admin/users/u-admin")
+        .set("Authorization", `Bearer ${adminToken}`);
+
+      expect(response.status).toBe(204);
+      expect(sqlCalls()).toContain("COMMIT");
+      expect(mockRelease).toHaveBeenCalledTimes(1);
+    });
+
+    it("retorna 500, hace ROLLBACK y libera la conexión si una consulta falla", async () => {
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      mockClientQuery.mockImplementation(async (sql: string) => {
+        if (sql.includes("SELECT role FROM users")) {
+          return { rows: [{ role: "user" }] };
+        }
+        if (sql.startsWith("DELETE FROM transactions")) {
+          throw new Error("fallo simulado");
+        }
+        return { rows: [] };
+      });
+
+      const response = await request(app)
+        .delete("/admin/users/u-1")
+        .set("Authorization", `Bearer ${adminToken}`);
+
+      expect(response.status).toBe(500);
+      expect(sqlCalls()).toContain("ROLLBACK");
+      expect(sqlCalls()).not.toContain("COMMIT");
+      expect(mockRelease).toHaveBeenCalledTimes(1);
+      consoleSpy.mockRestore();
     });
   });
 

@@ -15,8 +15,8 @@ const options: swaggerJSDoc.Options = {
         description: "Local",
       },
       {
-        url: "https://axora-backend-production-4e8d.up.railway.app",
-        description: "Producción (Railway)",
+        url: "https://axora-backend-jxje.onrender.com",
+        description: "Producción (Render)",
       },
     ],
     components: {

@@ -131,6 +131,93 @@ adminRouter.patch(
 
 /**
  * @openapi
+ * /admin/users/{id}:
+ *   delete:
+ *     summary: Elimina un usuario y sus movimientos (panel de admin)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       204:
+ *         description: Usuario eliminado
+ *       400:
+ *         description: No puedes eliminar tu propia cuenta, o la operación dejaría al sistema sin administradores
+ *       401:
+ *         description: Token no proporcionado, inválido o expirado
+ *       403:
+ *         description: Acceso restringido a administradores
+ *       404:
+ *         description: Usuario no encontrado
+ *       500:
+ *         description: Error del servidor
+ */
+adminRouter.delete(
+  "/admin/users/:id",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    const { id } = req.params;
+
+    if (id === req.user?.id) {
+      return res.status(400).json({ error: "No puedes eliminar tu propia cuenta"});
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      const target = await client.query(`SELECT role FROM users WHERE id = $1`, [id]);
+      if (target.rows.length === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ error: "Usuario no encontrado" });
+      }
+
+      if (target.rows[0].role === "admin") {
+        const admins = await client.query(
+          `SELECT COUNT(*)::int AS count FROM users WHERE role = 'admin' and id != $1`, [id],
+        );
+        if (admins.rows[0].count ===0) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({ error: "Debe existir al menos un administrador." });
+        }
+      }
+
+      // Transacciones que tocan la wallet del usuario (origen o destino)
+      await client.query(
+        `DELETE FROM notification_outbox WHERE transaction_id IN (
+          SELECT t.id FROM transactions t
+          JOIN wallets w ON w.id IN (t.wallet_id, t.destination_wallet_id)
+          WHERE w.user_id = $1)`,
+        [id],
+      );
+      await client.query(
+        `DELETE FROM transactions WHERE wallet_id IN (SELECT id FROM wallets WHERE user_id = $1)
+          OR destination_wallet_id IN (SELECT id FROM wallets WHERE user_id = $1)`,
+          [id],
+      );
+      await client.query(`DELETE FROM users WHERE id = $1`, [id]);
+
+      await client.query("COMMIT");
+      res.status(204).send();
+    } catch (error) {
+      await client.query("ROLLBACK");
+      console.error(error);
+      res.status(500).json({ error: "Error al eliminar el usuario" });
+    } finally {
+      client.release();
+    }
+  },
+);
+
+/**
+ * @openapi
  * /admin/transactions:
  *   get:
  *     summary: Lista todas las transacciones con su usuario dueño (panel de admin)
