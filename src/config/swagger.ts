@@ -11,12 +11,12 @@ const options: swaggerJSDoc.Options = {
     },
     servers: [
       {
-        url: "http://localhost:3000",
-        description: "Local",
-      },
-      {
         url: "https://axora-backend-jxje.onrender.com",
         description: "Producción (Render)",
+      },
+      {
+        url: "http://localhost:3000",
+        description: "Local",
       },
     ],
     components: {
