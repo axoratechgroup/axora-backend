@@ -1,9 +1,11 @@
 # AXORA Backend
 
 > **🚀 Entorno de Producción:**  
-> - **API REST (Railway):** [`https://axora-backend-production-4e8d.up.railway.app`](https://axora-backend-production-4e8d.up.railway.app)  
-> - **Documentación Swagger / OpenAPI 3.0:** [`https://axora-backend-production-4e8d.up.railway.app/docs`](https://axora-backend-production-4e8d.up.railway.app/docs)  
-> - **Especificación OpenAPI JSON:** [`https://axora-backend-production-4e8d.up.railway.app/docs.json`](https://axora-backend-production-4e8d.up.railway.app/docs.json)  
+> - **API REST (Render):** [`https://axora-backend-jxje.onrender.com`](https://axora-backend-jxje.onrender.com)  
+> - **Documentación Swagger / OpenAPI 3.0:** [`https://axora-backend-jxje.onrender.com/docs`](https://axora-backend-jxje.onrender.com/docs)  
+> - **Especificación OpenAPI JSON:** [`https://axora-backend-jxje.onrender.com/docs.json`](https://axora-backend-jxje.onrender.com/docs.json)  
+> - **Nota:** el plan gratuito de Render duerme el servicio tras 15 min sin tráfico; el primer request puede tardar cerca de 1 min en responder.  
+> - **Historial de cambios:** [`CHANGELOG.md`](CHANGELOG.md)  
 > - **Estado:** Producción activo y saludable (`healthy`) — PostgreSQL 16 + Express 5 + Node.js 22 LTS
 
 
@@ -26,12 +28,12 @@ individual a través de la Vercel Function existente y AWS SES.
 
 1. Desplegar primero el frontend/Vercel con `/api/send-email` y `/axora-email-logo.png`.
 2. Revisar y ejecutar `alter_notification_outbox_for_recipients.sql` en la base destino
-   antes de desplegar este backend. No ejecutar `schema.sql` completo sobre Railway.
+   antes de desplegar este backend. No ejecutar `schema.sql` completo sobre la base de producción (Neon).
    La migración conserva datos y estados; cambia la unicidad a
    `(transaction_id, type, recipient_role)`. Si un destinatario histórico no se puede
    asociar con un rol, aborta para revisión. Si las restricciones de la base tienen
    nombres personalizados, adaptar el script antes de aplicarlo.
-3. Configurar en Railway `EMAIL_API_URL`, `EMAIL_API_SECRET` (igual que Vercel)
+3. Configurar en Render `EMAIL_API_URL`, `EMAIL_API_SECRET` (igual que Vercel)
    y `FRONTEND_URL` (URL pública de producción para enlaces y logo).
 4. Desplegar/reiniciar el backend y probar movimientos nuevos con usuarios de prueba.
    En SES sandbox, los destinatarios también deben estar verificados en la región usada.
@@ -50,7 +52,7 @@ envío externo después de `COMMIT`, el movimiento sigue confirmado y el correo 
 `FAILED`. `SENT` significa aceptado por el transporte SES, no recepción verificada
 en la bandeja del usuario; no hay procesamiento de rebotes en este bloque.
 
-La entrega se inicia una vez por movimiento desde el proceso Railway. No hay worker
+La entrega se inicia una vez por movimiento desde el proceso del backend (Render). No hay worker
 periódico ni reintento automático tras un reinicio. La función exportada
 `dispatchTransactionNotifications(transactionId)` permite reintentar explícitamente
 `PENDING`/`FAILED` hasta tres intentos por fila desde código administrativo del servidor;
